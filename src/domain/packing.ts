@@ -10,6 +10,7 @@ import {
   translateBox,
   unionBoxes,
 } from "./geometry";
+import { activeServiceReservations } from "./service-reservations";
 import type {
   Axis,
   Box3D,
@@ -378,7 +379,7 @@ export function enumeratePackPlans(request: EnumerationRequest): EnumerationResp
               tolerance.outerWrap,
               tolerance.outerWrap,
             ]);
-            const localServiceVolumes: ServiceVolume[] = pack.serviceReservations
+            const localServiceVolumes: ServiceVolume[] = activeServiceReservations(pack)
               .filter((reservation) => reservation.enabled)
               .map((reservation) => ({
                 id: reservation.id,

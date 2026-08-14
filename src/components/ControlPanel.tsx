@@ -1,5 +1,13 @@
 import { cellsLibrary } from "../data/library";
-import type { Axis, PackingMode, PackRequest, PlannerConfig } from "../domain/types";
+import { activeServiceReservations, separatedOffsets } from "../domain/service-reservations";
+import type {
+  Axis,
+  PackFace,
+  PackingMode,
+  PackRequest,
+  PlannerConfig,
+  ServiceReservation,
+} from "../domain/types";
 import { usePlannerStore } from "../store/planner-store";
 import { NumberField } from "./NumberField";
 
@@ -22,8 +30,20 @@ export function ControlPanel({ config }: { config: PlannerConfig }) {
   const setPackField = usePlannerStore((state) => state.setPackField);
   const setTolerance = usePlannerStore((state) => state.setTolerance);
   const setService = usePlannerStore((state) => state.setService);
+  const setWiringExitMode = usePlannerStore((state) => state.setWiringExitMode);
   const selectedCell =
     cellsLibrary.find((cell) => cell.id === config.pack.cellId) ?? cellsLibrary[0];
+  const combinedExit = config.pack.serviceReservations.find(
+    (reservation) => reservation.kind === "wiring-exit",
+  );
+  const powerExit = config.pack.serviceReservations.find(
+    (reservation) => reservation.kind === "power-output",
+  );
+  const balanceExit = config.pack.serviceReservations.find(
+    (reservation) => reservation.kind === "balance-harness",
+  );
+  const activeReservations = activeServiceReservations(config.pack);
+  const wiringEnabled = activeReservations.some((reservation) => reservation.enabled);
 
   const togglePacking = (mode: PackingMode) => {
     const current = config.pack.packingModes;
@@ -33,6 +53,78 @@ export function ControlPanel({ config }: { config: PlannerConfig }) {
       current.includes(mode) ? current.filter((item) => item !== mode) : [...current, mode],
     );
   };
+
+  const setAllWiringEnabled = (enabled: boolean) => {
+    activeReservations.forEach((reservation) => setService(reservation.id, { enabled }));
+  };
+
+  const setReservationFace = (reservation: ServiceReservation, face: PackFace) => {
+    if (
+      config.pack.wiringExitMode === "separate" &&
+      powerExit &&
+      balanceExit &&
+      (reservation.kind === "power-output" || reservation.kind === "balance-harness")
+    ) {
+      const other = reservation.kind === "power-output" ? balanceExit : powerExit;
+      if (other.face === face) {
+        const offsets = separatedOffsets(face, powerExit, balanceExit);
+        setService(powerExit.id, {
+          face,
+          offsetMm: offsets.power,
+        });
+        setService(balanceExit.id, {
+          face,
+          offsetMm: offsets.balance,
+        });
+        return;
+      }
+    }
+    setService(reservation.id, { face, offsetMm: [0, 0, 0] });
+  };
+
+  const reservationFields = (reservation: ServiceReservation) => (
+    <div className="service-controls">
+      <label className="select-field compact">
+        <span>Выход</span>
+        <select
+          value={reservation.face}
+          onChange={(event) =>
+            setReservationFace(reservation, event.currentTarget.value as PackFace)
+          }
+        >
+          {Object.entries(FACE_LABELS).map(([value, label]) => (
+            <option value={value} key={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="service-size">
+        {(["x", "y", "z"] as Axis[]).map((axis, index) => (
+          <NumberField
+            key={axis}
+            label={axis.toUpperCase()}
+            value={reservation.sizeMm[index]}
+            min={1}
+            unit="мм"
+            onChange={(value) => {
+              const size = [...reservation.sizeMm] as [number, number, number];
+              size[index] = value;
+              setService(reservation.id, { sizeMm: size });
+            }}
+          />
+        ))}
+      </div>
+      {(reservation.offsetMm ?? [0, 0, 0]).some((value) => Math.abs(value) > 0.05) && (
+        <div className="service-offset">
+          <span>Смещение: {(reservation.offsetMm ?? [0, 0, 0]).join(" / ")} мм</span>
+          <button type="button" onClick={() => setService(reservation.id, { offsetMm: [0, 0, 0] })}>
+            к грани
+          </button>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <aside className="control-panel side-panel">
@@ -186,70 +278,117 @@ export function ControlPanel({ config }: { config: PlannerConfig }) {
 
       <section className="control-section">
         <div className="section-title">
-          <h3>Резерв проводки</h3>
-          <span>KEEP-OUT</span>
+          <h3>Выход проводов</h3>
+          <span>CABLE KEEP-OUT</span>
         </div>
-        {config.pack.serviceReservations.map((reservation) => (
-          <div className="service-reservation" key={reservation.id}>
-            <label className="switch-row">
-              <span>{reservation.label}</span>
-              <input
-                type="checkbox"
-                checked={reservation.enabled}
-                onChange={(event) =>
-                  setService(reservation.id, { enabled: event.currentTarget.checked })
-                }
-              />
-            </label>
-            <div className="service-controls">
-              <label className="select-field compact">
-                <span>Грань</span>
-                <select
-                  value={reservation.face}
-                  onChange={(event) =>
-                    setService(reservation.id, {
-                      face: event.currentTarget.value as typeof reservation.face,
-                      offsetMm: [0, 0, 0],
-                    })
-                  }
-                >
-                  {Object.entries(FACE_LABELS).map(([value, label]) => (
-                    <option value={value} key={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="service-size">
-                {(["x", "y", "z"] as Axis[]).map((axis, index) => (
-                  <NumberField
-                    key={axis}
-                    label={axis.toUpperCase()}
-                    value={reservation.sizeMm[index]}
-                    min={0}
-                    unit="мм"
-                    onChange={(value) => {
-                      const size = [...reservation.sizeMm] as [number, number, number];
-                      size[index] = value;
-                      setService(reservation.id, { sizeMm: size });
-                    }}
-                  />
-                ))}
-              </div>
-              {(reservation.offsetMm ?? [0, 0, 0]).some((value) => Math.abs(value) > 0.05) && (
-                <div className="service-offset">
-                  <span>Смещение: {(reservation.offsetMm ?? [0, 0, 0]).join(" / ")} мм</span>
-                  <button
-                    type="button"
-                    onClick={() => setService(reservation.id, { offsetMm: [0, 0, 0] })}
-                  >
-                    к грани
-                  </button>
-                </div>
-              )}
-            </div>
+        <div className={`wiring-card ${wiringEnabled ? "enabled" : ""}`}>
+          <div className="wiring-card-head">
+            <span className="cable-glyph" aria-hidden="true">
+              <i />
+              <i />
+            </span>
+            <span className="wiring-copy">
+              <b>
+                {config.pack.wiringExitMode === "combined"
+                  ? "Силовые + балансировка"
+                  : "Два раздельных выхода"}
+              </b>
+              <small>
+                {config.pack.wiringExitMode === "combined"
+                  ? "Один общий кабельный коридор"
+                  : "Независимые позиции и габариты"}
+              </small>
+            </span>
+            <button
+              type="button"
+              className={`wiring-state ${wiringEnabled ? "active" : ""}`}
+              aria-pressed={wiringEnabled}
+              onClick={() => setAllWiringEnabled(!wiringEnabled)}
+            >
+              {wiringEnabled ? "В расчёте" : "Исключён"}
+            </button>
           </div>
-        ))}
+          {config.pack.wiringExitMode === "combined" &&
+            combinedExit &&
+            reservationFields(combinedExit)}
+          {config.pack.wiringExitMode === "separate" && (
+            <div className="split-exit-summary">
+              {activeReservations.map((reservation) => (
+                <span key={reservation.id}>
+                  <i className={reservation.kind} />
+                  {reservation.kind === "power-output" ? "Силовые" : "Балансировка"}
+                  <b>{FACE_LABELS[reservation.face]}</b>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <details
+          className="wiring-advanced"
+          open={config.pack.wiringExitMode === "separate" ? true : undefined}
+        >
+          <summary>
+            <span>
+              <b>Advanced settings</b>
+              <small>разнести выходы по разным местам</small>
+            </span>
+            <i aria-hidden="true" />
+          </summary>
+          <div className="advanced-wiring-body">
+            <span className="field-label">Расположение проводов</span>
+            <div className="segmented wiring-mode" role="radiogroup">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={config.pack.wiringExitMode === "combined"}
+                className={config.pack.wiringExitMode === "combined" ? "active" : ""}
+                onClick={() => setWiringExitMode("combined")}
+              >
+                Вместе
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={config.pack.wiringExitMode === "separate"}
+                className={config.pack.wiringExitMode === "separate" ? "active" : ""}
+                onClick={() => setWiringExitMode("separate")}
+              >
+                Раздельно
+              </button>
+            </div>
+            {config.pack.wiringExitMode === "separate" && (
+              <div className="separate-reservations">
+                {[powerExit, balanceExit].map(
+                  (reservation) =>
+                    reservation && (
+                      <div className="service-reservation" key={reservation.id}>
+                        <div className="service-heading">
+                          <span className={`service-dot ${reservation.kind}`} />
+                          <b>
+                            {reservation.kind === "power-output"
+                              ? "Силовые провода"
+                              : "Балансировочный шлейф"}
+                          </b>
+                          <button
+                            type="button"
+                            aria-pressed={reservation.enabled}
+                            className={reservation.enabled ? "active" : ""}
+                            onClick={() =>
+                              setService(reservation.id, { enabled: !reservation.enabled })
+                            }
+                          >
+                            {reservation.enabled ? "ON" : "OFF"}
+                          </button>
+                        </div>
+                        {reservationFields(reservation)}
+                      </div>
+                    ),
+                )}
+              </div>
+            )}
+          </div>
+        </details>
       </section>
     </aside>
   );

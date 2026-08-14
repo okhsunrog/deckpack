@@ -272,37 +272,84 @@ function BoxObject({
 
 function KeepOutShape({
   size,
+  reservation,
   selected,
   onPointerDown,
 }: {
   size: Vec3;
+  reservation: ServiceReservation;
   selected: boolean;
   onPointerDown: (event: ThreeEvent<PointerEvent>) => void;
 }) {
   const [length, width, height] = size;
-  const edgeGeometry = useMemo(
-    () => new BoxGeometry(length, width, height),
-    [height, length, width],
-  );
+  const normalAxis = reservation.face.endsWith("x") ? 0 : 1;
+  const tangentAxis = normalAxis === 0 ? 1 : 0;
+  const lineLength = Math.max(2, size[normalAxis] - 4);
+  const lineOffset = Math.min(4, size[tangentAxis] * 0.18);
+  const linePoints = (offset: number): Vec3[] => {
+    const start: Vec3 = [0, 0, 0];
+    const end: Vec3 = [0, 0, 0];
+    start[normalAxis] = -lineLength / 2;
+    end[normalAxis] = lineLength / 2;
+    start[tangentAxis] = offset;
+    end[tangentAxis] = offset;
+    return [start, end];
+  };
+  const showPower = reservation.kind !== "balance-harness";
+  const showBalance = reservation.kind !== "power-output";
+  const shellColor = reservation.kind === "balance-harness" ? "#58b9c4" : "#d4864d";
+  const shortLabel =
+    reservation.kind === "wiring-exit"
+      ? "PWR + BAL"
+      : reservation.kind === "power-output"
+        ? "POWER"
+        : "BALANCE";
   return (
     <group onPointerDown={onPointerDown}>
-      <mesh>
-        <boxGeometry args={size} />
-        <meshStandardMaterial
-          color={selected ? "#70d3dc" : "#54a6b1"}
+      <RoundedBox
+        args={[length, width, height]}
+        radius={Math.max(0.8, Math.min(3, length / 8, width / 8, height / 4))}
+        smoothness={3}
+      >
+        <meshPhysicalMaterial
+          color={shellColor}
+          emissive={shellColor}
+          emissiveIntensity={selected ? 0.14 : 0.04}
           transparent
-          opacity={selected ? 0.22 : 0.1}
+          opacity={selected ? 0.28 : 0.15}
+          roughness={0.34}
+          metalness={0.08}
+          transmission={0.08}
           depthWrite={false}
         />
-      </mesh>
-      <lineSegments>
-        <edgesGeometry args={[edgeGeometry]} />
-        <lineBasicMaterial
-          color={selected ? "#8de9ef" : "#4f9da6"}
+      </RoundedBox>
+      {showPower && (
+        <Line
+          points={linePoints(showBalance ? -lineOffset : 0)}
+          color="#ff8954"
+          lineWidth={selected ? 4 : 3}
           transparent
-          opacity={selected ? 1 : 0.75}
+          opacity={0.94}
         />
-      </lineSegments>
+      )}
+      {showBalance && (
+        <Line
+          points={linePoints(showPower ? lineOffset : 0)}
+          color="#72d4dc"
+          lineWidth={selected ? 2.4 : 1.8}
+          transparent
+          opacity={0.94}
+        />
+      )}
+      <Text
+        position={[0, 0, height / 2 + 1.6]}
+        fontSize={Math.max(2.4, Math.min(4, width * 0.12))}
+        color={selected ? "#f6e1c6" : "#b9c4c7"}
+        anchorX="center"
+        anchorY="bottom"
+      >
+        {shortLabel}
+      </Text>
     </group>
   );
 }
@@ -348,6 +395,7 @@ function EditableKeepOut({
     <group ref={objectRef} position={center}>
       <KeepOutShape
         size={size}
+        reservation={reservation}
         selected={selected}
         onPointerDown={(event) => {
           event.stopPropagation();

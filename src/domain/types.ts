@@ -82,11 +82,12 @@ export interface ToleranceLayer {
 }
 
 export type PackFace = "positive-x" | "negative-x" | "positive-y" | "negative-y";
+export type WiringExitMode = "combined" | "separate";
 
 export interface ServiceReservation {
   id: string;
   label: string;
-  kind: "balance-harness" | "power-output";
+  kind: "wiring-exit" | "balance-harness" | "power-output";
   face: PackFace;
   sizeMm: Vec3;
   offsetMm?: Vec3;
@@ -107,6 +108,7 @@ export interface PackRequest {
   maxLayers: number;
   targetCenterOfMassXmm: number;
   toleranceStack: ToleranceLayer[];
+  wiringExitMode: WiringExitMode;
   serviceReservations: ServiceReservation[];
 }
 

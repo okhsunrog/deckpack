@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 import { getCell } from "../data/library";
 import { defaultConfig } from "../store/planner-store";
-import { boxCenter, boxContainmentKernel, boxSize } from "./geometry";
+import { boxCenter, boxContainmentKernel, boxesIntersect, boxSize } from "./geometry";
 import { enumeratePackPlans, factorTriples } from "./packing";
+import { setWiringExitMode } from "./service-reservations";
 
 describe("factorTriples", () => {
   it("enumerates every ordered integer factorization", () => {
@@ -42,6 +43,8 @@ describe("enumeratePackPlans", () => {
   it("keeps every reservation inside the enclosure", () => {
     for (const plan of response.plans) {
       expect(boxContainmentKernel.contains(config.enclosure, plan.bounds)).toBe(true);
+      expect(plan.serviceVolumes).toHaveLength(1);
+      expect(plan.serviceVolumes[0].kind).toBe("wiring-exit");
       expect(plan.metrics.layerCount).toBeLessThanOrEqual(config.pack.maxLayers);
       expect(plan.blocks).toHaveLength(1);
       expect(plan.blocks[0].groupIds).toHaveLength(config.pack.seriesCount);
@@ -58,15 +61,16 @@ describe("enumeratePackPlans", () => {
 
   it("keeps a mouse-edited service offset relative to its pack face", () => {
     const offsetConfig = structuredClone(defaultConfig);
-    const balance = offsetConfig.pack.serviceReservations.find(
-      (reservation) => reservation.id === "balance-harness",
+    const wiringExit = offsetConfig.pack.serviceReservations.find(
+      (reservation) => reservation.kind === "wiring-exit",
     )!;
-    balance.offsetMm = [8, 6, 2];
+    wiringExit.face = "positive-y";
+    wiringExit.offsetMm = [8, 6, 2];
     const plan = enumeratePackPlans({
       config: offsetConfig,
       cell: getCell(offsetConfig.pack.cellId),
     }).plans[0];
-    const volume = plan.serviceVolumes.find((item) => item.id === balance.id)!;
+    const volume = plan.serviceVolumes.find((item) => item.id === wiringExit.id)!;
     const block = plan.blocks[0].envelope;
     const center = boxCenter(volume.box);
     const blockCenter = boxCenter(block);
@@ -75,5 +79,17 @@ describe("enumeratePackPlans", () => {
     expect(center[0] - blockCenter[0]).toBeCloseTo(8);
     expect(center[1] - block.max[1] - size[1] / 2).toBeCloseTo(6);
     expect(center[2] - blockCenter[2]).toBeCloseTo(2);
+  });
+
+  it("starts advanced separate exits beside each other instead of overlapping", () => {
+    const separateConfig = structuredClone(defaultConfig);
+    separateConfig.pack = setWiringExitMode(separateConfig.pack, "separate");
+    const plan = enumeratePackPlans({
+      config: separateConfig,
+      cell: getCell(separateConfig.pack.cellId),
+    }).plans[0];
+
+    expect(plan.serviceVolumes).toHaveLength(2);
+    expect(boxesIntersect(plan.serviceVolumes[0].box, plan.serviceVolumes[1].box)).toBe(false);
   });
 });

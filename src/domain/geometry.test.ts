@@ -27,7 +27,8 @@ describe("box geometry", () => {
 
 describe("workspace evaluation", () => {
   const config = structuredClone(defaultConfig);
-  const plan = enumeratePackPlans({ config, cell: getCell(config.pack.cellId) }).plans[0];
+  const plans = enumeratePackPlans({ config, cell: getCell(config.pack.cellId) }).plans;
+  const plan = plans.find((candidate) => candidate.anchor === "nose") ?? plans[0];
   const esc = componentsLibrary.find((component) => component.id === "makerx-dv6s")!;
 
   function placement(x: number): ComponentPlacement {

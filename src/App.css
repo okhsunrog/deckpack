@@ -422,35 +422,120 @@
   align-items: center;
 }
 
-.service-reservation + .service-reservation {
-  padding-top: 15px;
-  margin-top: 15px;
-  border-top: 1px dashed var(--line);
+.wiring-card {
+  overflow: hidden;
+  border: 1px solid #2a3d46;
+  border-radius: 3px;
+  background: #0d1920;
+  box-shadow: inset 3px 0 0 #42535a;
 }
 
-.switch-row {
-  display: flex;
+.wiring-card.enabled {
+  border-color: #59482f;
+  box-shadow: inset 3px 0 0 var(--fishpaper);
+}
+
+.wiring-card-head {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 9px;
-  font-size: 11px;
+  gap: 8px;
+  padding: 11px 10px 10px 12px;
+}
+
+.cable-glyph {
+  position: relative;
+  width: 29px;
+  height: 29px;
+  border: 1px solid #3d4c52;
+  border-radius: 50%;
+  background: #101e25;
+}
+
+.cable-glyph::after {
+  position: absolute;
+  top: 12px;
+  right: -5px;
+  width: 9px;
+  height: 3px;
+  content: "";
+  background: #101e25;
+}
+
+.cable-glyph i {
+  position: absolute;
+  left: 6px;
+  width: 21px;
+  height: 2px;
+  border-radius: 2px;
+  transform: rotate(-12deg);
+  transform-origin: left center;
+}
+
+.cable-glyph i:first-child {
+  top: 10px;
+  background: var(--copper);
+  box-shadow: 0 0 8px rgb(240 120 69 / 35%);
+}
+
+.cable-glyph i:last-child {
+  top: 17px;
+  height: 1px;
+  background: var(--cyan);
+  box-shadow: 0 0 7px rgb(90 181 192 / 30%);
+}
+
+.wiring-copy {
+  min-width: 0;
+}
+
+.wiring-copy b,
+.wiring-copy small {
+  display: block;
+}
+
+.wiring-copy b {
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text);
 }
 
-.switch-row input {
-  width: 28px;
-  height: 15px;
-  margin: 0;
-  accent-color: var(--fishpaper);
+.wiring-copy small {
+  margin-top: 3px;
+  font-size: 7px;
+  color: var(--text-faint);
+}
+
+.wiring-state {
+  padding: 5px 6px;
+  border: 1px solid #3a4a51;
+  border-radius: 9px;
+  font:
+    500 6px/1 "JetBrains Mono",
+    monospace;
+  letter-spacing: 0.03em;
+  color: var(--text-faint);
+  background: transparent;
+}
+
+.wiring-state.active {
+  border-color: #745b35;
+  color: var(--fishpaper-pale);
+  background: #251f17;
 }
 
 .service-controls {
-  opacity: 0.96;
+  padding: 10px 11px 11px;
+  border-top: 1px solid var(--line-soft);
+  background: rgb(15 28 35 / 72%);
 }
 
 .select-field.compact {
   display: grid;
-  grid-template-columns: 43px 1fr;
+  grid-template-columns: 50px 1fr;
   align-items: center;
   margin-bottom: 7px;
 }
@@ -478,6 +563,171 @@
   font: inherit;
   color: var(--cyan);
   background: transparent;
+}
+
+.split-exit-summary {
+  display: grid;
+  gap: 1px;
+  border-top: 1px solid var(--line-soft);
+  background: #132028;
+}
+
+.split-exit-summary > span {
+  display: grid;
+  grid-template-columns: 7px 1fr auto;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px 7px 12px;
+  font-size: 8px;
+  color: var(--text-dim);
+}
+
+.split-exit-summary > span + span {
+  border-top: 1px solid var(--line-soft);
+}
+
+.split-exit-summary i,
+.service-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.split-exit-summary i.power-output,
+.service-dot.power-output {
+  background: var(--copper);
+  box-shadow: 0 0 6px rgb(240 120 69 / 45%);
+}
+
+.split-exit-summary i.balance-harness,
+.service-dot.balance-harness {
+  background: var(--cyan);
+  box-shadow: 0 0 6px rgb(90 181 192 / 45%);
+}
+
+.split-exit-summary b {
+  font:
+    500 6px/1 "JetBrains Mono",
+    monospace;
+  color: var(--text-faint);
+}
+
+.wiring-advanced {
+  margin-top: 9px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+}
+
+.wiring-advanced[open] {
+  border-color: var(--line);
+  background: #0d181e;
+}
+
+.wiring-advanced > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 9px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--text-faint);
+}
+
+.wiring-advanced > summary::-webkit-details-marker {
+  display: none;
+}
+
+.wiring-advanced > summary span,
+.wiring-advanced > summary b,
+.wiring-advanced > summary small {
+  display: block;
+}
+
+.wiring-advanced > summary b {
+  font:
+    500 8px/1.2 "IBM Plex Sans",
+    sans-serif;
+  color: var(--text-dim);
+}
+
+.wiring-advanced > summary small {
+  margin-top: 2px;
+  font-size: 7px;
+  color: var(--text-faint);
+}
+
+.wiring-advanced > summary > i {
+  width: 6px;
+  height: 6px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 140ms ease;
+}
+
+.wiring-advanced[open] > summary > i {
+  transform: rotate(225deg);
+}
+
+.advanced-wiring-body {
+  padding: 2px 9px 10px;
+}
+
+.advanced-wiring-body > .field-label {
+  display: block;
+  margin: 5px 0 6px;
+  font-size: 8px;
+  color: var(--text-faint);
+}
+
+.wiring-mode {
+  margin-bottom: 10px;
+}
+
+.separate-reservations {
+  display: grid;
+  gap: 7px;
+}
+
+.service-reservation {
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  border-radius: 2px;
+  background: #101c23;
+}
+
+.service-heading {
+  display: grid;
+  grid-template-columns: 7px 1fr auto;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 9px;
+}
+
+.service-heading b {
+  font-size: 8px;
+  color: var(--text-dim);
+}
+
+.service-heading button {
+  padding: 3px 5px;
+  border: 1px solid #34464e;
+  border-radius: 7px;
+  font:
+    500 6px/1 "JetBrains Mono",
+    monospace;
+  color: var(--text-faint);
+  background: transparent;
+}
+
+.service-heading button.active {
+  border-color: #5a573b;
+  color: var(--fishpaper-pale);
+  background: #22221a;
+}
+
+.service-reservation .service-controls {
+  padding: 8px;
 }
 
 .viewport-column {

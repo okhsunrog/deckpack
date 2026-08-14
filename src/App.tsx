@@ -6,13 +6,14 @@ import { ResultsPanel } from "./components/ResultsPanel";
 import { useLayoutEngine } from "./components/use-layout-engine";
 import { componentsLibrary, getCell } from "./data/library";
 import { evaluateWorkspace } from "./domain/geometry";
+import { activeServiceReservations } from "./domain/service-reservations";
 import { PlannerScene } from "./scene/PlannerScene";
 import { usePlannerStore } from "./store/planner-store";
 
 function exportProject() {
   const state = usePlannerStore.getState();
   const payload = JSON.stringify(
-    { schemaVersion: 1, config: state.config, components: state.placements },
+    { schemaVersion: 2, config: state.config, components: state.placements },
     null,
     2,
   );
@@ -126,7 +127,7 @@ function App() {
               selectedComponentId={selectedComponentId}
               onSelectComponent={setSelectedComponentId}
               onMoveComponent={(id, position) => updateComponent(id, { position })}
-              serviceReservations={config.pack.serviceReservations}
+              serviceReservations={activeServiceReservations(config.pack)}
               onUpdateService={setService}
             />
             <div className="axis-ruler" aria-hidden="true">

@@ -1,5 +1,10 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import {
+  createDefaultServiceReservations,
+  normalizeWiringReservations,
+  setWiringExitMode as updateWiringExitMode,
+} from "../domain/service-reservations";
 import type {
   ComponentPlacement,
   ComponentSpec,
@@ -8,6 +13,7 @@ import type {
   PlannerConfig,
   ServiceReservation,
   ToleranceLayer,
+  WiringExitMode,
 } from "../domain/types";
 
 export const defaultConfig: PlannerConfig = {
@@ -65,26 +71,8 @@ export const defaultConfig: PlannerConfig = {
         thicknessMm: 1,
       },
     ],
-    serviceReservations: [
-      {
-        id: "balance-harness",
-        label: "Balance harness",
-        kind: "balance-harness",
-        face: "positive-y",
-        sizeMm: [60, 14, 12],
-        offsetMm: [0, 0, 0],
-        enabled: true,
-      },
-      {
-        id: "power-output",
-        label: "Power cable exit",
-        kind: "power-output",
-        face: "positive-x",
-        sizeMm: [45, 34, 18],
-        offsetMm: [0, 0, 0],
-        enabled: true,
-      },
-    ],
+    wiringExitMode: "combined",
+    serviceReservations: createDefaultServiceReservations(),
   },
 };
 
@@ -98,6 +86,7 @@ interface PlannerState {
   setPackField: <K extends keyof PackRequest>(key: K, value: PackRequest[K]) => void;
   setTolerance: (id: string, thicknessMm: number) => void;
   setService: (id: string, patch: Partial<ServiceReservation>) => void;
+  setWiringExitMode: (mode: WiringExitMode) => void;
   setSelectedPlanId: (id: string | undefined) => void;
   setSelectedComponentId: (id: string | undefined) => void;
   setRightPanel: (panel: "variants" | "components") => void;
@@ -106,6 +95,8 @@ interface PlannerState {
   removeComponent: (id: string) => void;
   resetProject: () => void;
 }
+
+type PersistedPlannerState = Pick<PlannerState, "config" | "placements" | "selectedPlanId">;
 
 function freshConfig(): PlannerConfig {
   return structuredClone(defaultConfig);
@@ -158,6 +149,13 @@ export const usePlannerStore = create<PlannerState>()(
             },
           },
         })),
+      setWiringExitMode: (mode) =>
+        set((state) => ({
+          config: {
+            ...state.config,
+            pack: updateWiringExitMode(state.config.pack, mode),
+          },
+        })),
       setSelectedPlanId: (selectedPlanId) => set({ selectedPlanId }),
       setSelectedComponentId: (selectedComponentId) => set({ selectedComponentId }),
       setRightPanel: (rightPanel) => set({ rightPanel }),
@@ -205,6 +203,17 @@ export const usePlannerStore = create<PlannerState>()(
     }),
     {
       name: "deckpack-project-v1",
+      version: 2,
+      migrate: (persistedState) => {
+        const state = persistedState as PersistedPlannerState;
+        return {
+          ...state,
+          config: {
+            ...state.config,
+            pack: normalizeWiringReservations(state.config.pack),
+          },
+        };
+      },
       partialize: (state) => ({
         config: state.config,
         placements: state.placements,

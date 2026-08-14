@@ -24,7 +24,7 @@ vp build
 - All calculations use millimetres and grams.
 - Cell-library dimensions are maximum finished-cell dimensions including the manufacturer sleeve.
 - Nickel, fishpaper, compound, group separators, and outer wrap remain separate tolerance layers.
-- Balance-harness and power-output regions are explicit collision keep-outs.
+- Power and balance wiring share one collision keep-out by default; advanced mode can split them.
 - `brick` and `staggered` lattices are both enumerated. Staggered results are marked as requiring a custom holder.
 - `PackPlan.blocks` and global `seriesOrder` allow a future pack to be split into multiple physical blocks while retaining one electrical S-chain.
 - Enclosure checks go through `ContainmentKernel`; v1 provides a box implementation.
