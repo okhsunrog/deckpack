@@ -580,9 +580,22 @@ function SceneContents(props: SceneContentsProps) {
     <>
       <CameraSetup enclosure={enclosure} />
       <color attach="background" args={["#0b141a"]} />
-      <fog attach="fog" args={["#0b141a", 550, 1300]} />
-      <ambientLight intensity={1.4} />
-      <directionalLight position={[160, -180, 360]} intensity={2.8} castShadow />
+      <hemisphereLight args={["#dcecf2", "#1a252b", 1.8]} />
+      <ambientLight intensity={1.25} />
+      <directionalLight
+        position={[160, -180, 360]}
+        intensity={2.6}
+        castShadow
+        shadow-mapSize-width={2048}
+        shadow-mapSize-height={2048}
+        shadow-camera-left={-enclosure.dimensionsMm.length * 0.7}
+        shadow-camera-right={enclosure.dimensionsMm.length * 0.7}
+        shadow-camera-top={enclosure.dimensionsMm.width}
+        shadow-camera-bottom={-enclosure.dimensionsMm.width}
+        shadow-camera-near={10}
+        shadow-camera-far={1000}
+        shadow-bias={-0.00015}
+      />
       <EnclosureObject enclosure={enclosure} />
       {plan && (
         <>
@@ -650,7 +663,7 @@ function SceneContents(props: SceneContentsProps) {
         enabled={!dragging}
         target={[0, 0, 0]}
         minDistance={120}
-        maxDistance={1400}
+        maxDistance={2200}
         maxPolarAngle={Math.PI * 0.49}
       />
     </>
@@ -669,7 +682,7 @@ export function PlannerScene(props: PlannerSceneProps) {
       <Canvas
         shadows
         dpr={[1, 1.75]}
-        camera={{ fov: 35, near: 1, far: 2500 }}
+        camera={{ fov: 35, near: 1, far: 4500 }}
         gl={{ antialias: true, alpha: false }}
       >
         <SceneContents
