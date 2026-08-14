@@ -44,6 +44,8 @@ interface PlannerSceneProps {
   onUpdateService: (id: string, patch: Partial<ServiceReservation>) => void;
 }
 
+type KeepOutTool = "translate" | "scale";
+
 const CELL_COLORS = ["#d59b45", "#d36d4b", "#809ba2", "#7e927a", "#a77ca0", "#718aaf"];
 
 interface ComponentVisualProps {
@@ -274,6 +276,7 @@ function KeepOutShape({
   size,
   reservation,
   selected,
+  showMoveGuide,
   onPointerDown,
   onPointerOver,
   onPointerOut,
@@ -281,6 +284,7 @@ function KeepOutShape({
   size: Vec3;
   reservation: ServiceReservation;
   selected: boolean;
+  showMoveGuide: boolean;
   onPointerDown: (event: ThreeEvent<PointerEvent>) => void;
   onPointerOver: (event: ThreeEvent<PointerEvent>) => void;
   onPointerOut: (event: ThreeEvent<PointerEvent>) => void;
@@ -308,6 +312,18 @@ function KeepOutShape({
       : reservation.kind === "power-output"
         ? "POWER"
         : "BALANCE";
+  const guideLength = Math.max(28, size[tangentAxis] + 18);
+  const guideZ = height / 2 + 4;
+  const guidePoints: Vec3[] = [
+    tangentAxis === 0 ? [-guideLength / 2, 0, guideZ] : [0, -guideLength / 2, guideZ],
+    tangentAxis === 0 ? [guideLength / 2, 0, guideZ] : [0, guideLength / 2, guideZ],
+  ];
+  const positiveArrowPosition: Vec3 =
+    tangentAxis === 0 ? [guideLength / 2, 0, guideZ] : [0, guideLength / 2, guideZ];
+  const negativeArrowPosition: Vec3 =
+    tangentAxis === 0 ? [-guideLength / 2, 0, guideZ] : [0, -guideLength / 2, guideZ];
+  const positiveArrowRotation: Vec3 = tangentAxis === 0 ? [0, 0, -Math.PI / 2] : [0, 0, 0];
+  const negativeArrowRotation: Vec3 = tangentAxis === 0 ? [0, 0, Math.PI / 2] : [0, 0, Math.PI];
   return (
     <group onPointerDown={onPointerDown} onPointerOver={onPointerOver} onPointerOut={onPointerOut}>
       <RoundedBox
@@ -354,6 +370,40 @@ function KeepOutShape({
       >
         {shortLabel}
       </Text>
+      {showMoveGuide && (
+        <group renderOrder={30}>
+          <Line
+            points={guidePoints}
+            color="#72ff7c"
+            lineWidth={4.5}
+            depthTest={false}
+            transparent
+            opacity={1}
+          />
+          {[positiveArrowPosition, negativeArrowPosition].map((position, index) => (
+            <mesh
+              key={index === 0 ? "positive" : "negative"}
+              position={position}
+              rotation={index === 0 ? positiveArrowRotation : negativeArrowRotation}
+              renderOrder={31}
+            >
+              <coneGeometry args={[2.4, 6, 12]} />
+              <meshBasicMaterial color="#72ff7c" depthTest={false} toneMapped={false} />
+            </mesh>
+          ))}
+          <Text
+            position={[0, 0, guideZ + 0.2]}
+            fontSize={3.2}
+            color="#d8ffdc"
+            anchorX="center"
+            anchorY="bottom"
+            renderOrder={32}
+            material-depthTest={false}
+          >
+            DRAG {tangentAxis === 0 ? "X" : "Y"}
+          </Text>
+        </group>
+      )}
     </group>
   );
 }
@@ -363,6 +413,7 @@ function EditableKeepOut({
   envelope,
   reservation,
   selected,
+  tool,
   onDragStart,
   onCommit,
 }: {
@@ -370,6 +421,7 @@ function EditableKeepOut({
   envelope: Box3D;
   reservation: ServiceReservation;
   selected: boolean;
+  tool: KeepOutTool;
   onDragStart: (drag: {
     id: string;
     tangentAxis: 0 | 1;
@@ -420,6 +472,7 @@ function EditableKeepOut({
           size={size}
           reservation={reservation}
           selected={selected}
+          showMoveGuide={selected && tool === "translate"}
           onPointerDown={(event) => {
             event.stopPropagation();
             if (event.button !== 0) return;
@@ -448,12 +501,13 @@ function EditableKeepOut({
   return (
     <TransformControls
       object={objectRef}
-      mode="scale"
+      mode={tool}
       space="world"
-      size={0.88}
-      showX
-      showY
-      showZ
+      size={1.05}
+      showX={tool === "scale" || tangentAxis === 0}
+      showY={tool === "scale" || tangentAxis === 1}
+      showZ={tool === "scale"}
+      translationSnap={1}
       scaleSnap={0.05}
       onMouseUp={commitTransform}
     >
@@ -582,8 +636,26 @@ function CameraSetup({ enclosure }: { enclosure: EnclosureSpec }) {
   return null;
 }
 
+function CameraFocus({ point, request }: { point?: Vec3; request: number }) {
+  const { camera, controls } = useThree();
+  const pointRef = useRef(point);
+  pointRef.current = point;
+  useLayoutEffect(() => {
+    const focusPoint = pointRef.current;
+    if (!focusPoint || request === 0 || !controls) return;
+    const orbit = controls as unknown as { target: Vector3; update: () => void };
+    const nextTarget = new Vector3(...focusPoint);
+    camera.position.add(nextTarget.clone().sub(orbit.target));
+    orbit.target.copy(nextTarget);
+    orbit.update();
+  }, [camera, controls, request]);
+  return null;
+}
+
 interface SceneContentsProps extends PlannerSceneProps {
   selectedKeepOutId?: string;
+  keepOutTool: KeepOutTool;
+  keepOutFocusRequest: number;
   onSelectKeepOut: (id: string | undefined) => void;
   onOpenComponentMenu: (id: string, position: [number, number]) => void;
   onCloseComponentMenu: () => void;
@@ -600,6 +672,9 @@ function SceneContents(props: SceneContentsProps) {
   }>();
   const { enclosure, plan } = props;
   const floorZ = -enclosure.dimensionsMm.height / 2 + 0.01;
+  const selectedKeepOutVolume = plan?.serviceVolumes.find(
+    (volume) => volume.id === props.selectedKeepOutId,
+  );
   const stopDragging = () => {
     setDragging(undefined);
     setDraggingKeepOut(undefined);
@@ -669,6 +744,10 @@ function SceneContents(props: SceneContentsProps) {
   return (
     <>
       <CameraSetup enclosure={enclosure} />
+      <CameraFocus
+        point={selectedKeepOutVolume ? boxCenter(selectedKeepOutVolume.box) : undefined}
+        request={props.keepOutFocusRequest}
+      />
       <color attach="background" args={["#0b141a"]} />
       <hemisphereLight args={["#dcecf2", "#1a252b", 1.8]} />
       <ambientLight intensity={1.25} />
@@ -701,6 +780,7 @@ function SceneContents(props: SceneContentsProps) {
                 envelope={plan.blocks[0].envelope}
                 reservation={reservation}
                 selected={volume.id === props.selectedKeepOutId}
+                tool={props.keepOutTool}
                 onDragStart={(drag) => {
                   props.onSelectComponent(undefined);
                   props.onSelectKeepOut(volume.id);
@@ -767,6 +847,8 @@ function SceneContents(props: SceneContentsProps) {
 
 export function PlannerScene(props: PlannerSceneProps) {
   const [selectedKeepOutId, setSelectedKeepOutId] = useState<string>();
+  const [keepOutTool, setKeepOutTool] = useState<KeepOutTool>("translate");
+  const [keepOutFocusRequest, setKeepOutFocusRequest] = useState(0);
   const componentMenuRef = useRef<HTMLDivElement>(null);
   const [componentMenu, setComponentMenu] = useState<{
     id: string;
@@ -826,7 +908,12 @@ export function PlannerScene(props: PlannerSceneProps) {
         <SceneContents
           {...props}
           selectedKeepOutId={selectedKeepOutId}
-          onSelectKeepOut={setSelectedKeepOutId}
+          keepOutTool={keepOutTool}
+          keepOutFocusRequest={keepOutFocusRequest}
+          onSelectKeepOut={(id) => {
+            setSelectedKeepOutId(id);
+            if (id) setKeepOutTool("translate");
+          }}
           onOpenComponentMenu={(id, position) => setComponentMenu({ id, position })}
           onCloseComponentMenu={() => setComponentMenu(undefined)}
         />
@@ -861,16 +948,38 @@ export function PlannerScene(props: PlannerSceneProps) {
           <div className="keepout-editor-identity">
             <span>ПРИВЯЗАНО · {selectedFaceLabel}</span>
             <b>{selectedReservation.label}</b>
-            <small>Тяните сам блок · ход только вдоль {selectedEdgeAxis}</small>
+            <small>Тяните блок или стрелку · ход только вдоль {selectedEdgeAxis}</small>
           </div>
           <div className="keepout-editor-tools">
-            <div className="keepout-size-hint">
+            <button
+              type="button"
+              aria-pressed={keepOutTool === "translate"}
+              className={keepOutTool === "translate" ? "active" : ""}
+              onClick={() => {
+                setKeepOutTool("translate");
+                setKeepOutFocusRequest((value) => value + 1);
+              }}
+            >
+              <i aria-hidden="true">↔</i>
+              <span>
+                Сдвиг вдоль {selectedEdgeAxis}
+                <small>цветная стрелка</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              aria-pressed={keepOutTool === "scale"}
+              className={keepOutTool === "scale" ? "active" : ""}
+              onClick={() => {
+                setKeepOutTool("scale");
+                setKeepOutFocusRequest((value) => value + 1);
+              }}
+            >
               <i aria-hidden="true">↗</i>
               <span>
-                Ручки — размер
-                <small>ручки X / Y / Z</small>
+                Размер X / Y / Z<small>цветные ручки</small>
               </span>
-            </div>
+            </button>
             <button
               type="button"
               className="reset-position"
