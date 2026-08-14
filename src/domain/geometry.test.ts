@@ -13,6 +13,7 @@ import {
   footprintsIntersect,
   largestEmptyAxisAlignedBox,
   minCylinderCenterZ,
+  settleComponentCenterZ,
   unionVolumeMm3,
 } from "./geometry";
 import { enumeratePackPlans } from "./packing";
@@ -172,6 +173,35 @@ describe("rotated footprints", () => {
     expect(footprintsIntersect(diagonal, { ...block, centerXmm: 30, centerYmm: 25 })).toBe(true);
   });
 
+  it("settles a pitched component onto a ramp instead of perching it flat", () => {
+    const spec: MeshHeightMapEnclosureSpec = {
+      kind: "mesh-heightmap",
+      assetId: "test-ramp",
+      dimensionsMm: { length: 60, width: 40, height: 50 },
+    };
+    // 20 mm plate straddling the ramp edge at x = 0 (deep floor left, ramp right).
+    const place = (tiltDeg: number): ComponentPlacement => ({
+      id: "plate",
+      componentId: "custom",
+      position: [2, 0],
+      rotationDeg: 0,
+      tiltDeg,
+      dimensionsMm: { length: 20, width: 10, height: 4 },
+    });
+    const flat = settleComponentCenterZ(spec, place(0));
+    // The test ramp rises toward +x, so the plate lies along it nose-up.
+    const pitched = settleComponentCenterZ(spec, place(-50));
+    // Flat it must sit on the highest floor point under it; pitched along the
+    // ramp its trailing edge reaches down toward the deep floor.
+    expect(Number.isFinite(flat)).toBe(true);
+    expect(Number.isFinite(pitched)).toBe(true);
+    expect(pitched).toBeLessThan(flat);
+    // Box-enclosure formula: flat = floor + h/2, vertical = floor + L/2.
+    const boxSpec = { kind: "box" as const, dimensionsMm: { length: 100, width: 50, height: 30 } };
+    expect(settleComponentCenterZ(boxSpec, place(0))).toBeCloseTo(-15 + 2);
+    expect(settleComponentCenterZ(boxSpec, place(90))).toBeCloseTo(-15 + 10);
+  });
+
   it("rests a rotated component on the depth of its true footprint", () => {
     // Diagonal plate near the test ramp: its AABB reaches over the ramp but the
     // rectangle itself stays on the deep floor.
@@ -229,6 +259,7 @@ describe("workspace evaluation", () => {
       componentId: esc.id,
       position: [x, 0],
       rotationDeg: 0,
+      tiltDeg: 0,
       dimensionsMm: { ...esc.dimensionsMm },
     };
   }

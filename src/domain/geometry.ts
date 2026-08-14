@@ -495,13 +495,83 @@ export interface Footprint2D {
 }
 
 export function componentFootprint(placement: ComponentPlacement): Footprint2D {
+  const tilt = (placement.tiltDeg * Math.PI) / 180;
+  // The plan projection of a pitched box is still a rectangle: the length
+  // shortens by cos(tilt) while the box height leans into the plan by sin.
+  const halfLengthMm =
+    (placement.dimensionsMm.length / 2) * Math.abs(Math.cos(tilt)) +
+    (placement.dimensionsMm.height / 2) * Math.abs(Math.sin(tilt));
   return {
     centerXmm: placement.position[0],
     centerYmm: placement.position[1],
-    halfLengthMm: placement.dimensionsMm.length / 2,
+    halfLengthMm,
     halfWidthMm: placement.dimensionsMm.width / 2,
     angleRad: (placement.rotationDeg * Math.PI) / 180,
   };
+}
+
+/**
+ * Lowest possible center z of a (possibly pitched) component resting on the
+ * enclosure floor: the inclined bottom face settles onto the height map like a
+ * rigid plate. Returns Infinity when the face leaves the sampled grid or sits
+ * over a wall.
+ */
+export function settleComponentCenterZ(spec: EnclosureSpec, placement: ComponentPlacement): number {
+  const { length, height } = placement.dimensionsMm;
+  const tilt = (placement.tiltDeg * Math.PI) / 180;
+  const sinT = Math.sin(tilt);
+  const cosT = Math.cos(tilt);
+  if (spec.kind === "box") {
+    return (
+      -spec.dimensionsMm.height / 2 + (length / 2) * Math.abs(sinT) + (height / 2) * Math.abs(cosT)
+    );
+  }
+  const map = compiledHeightMap(spec);
+  const margin = map.safetyMarginMm;
+  const topZ = spec.dimensionsMm.height / 2;
+  const yaw = (placement.rotationDeg * Math.PI) / 180;
+  const cosY = Math.cos(yaw);
+  const sinY = Math.sin(yaw);
+  // Plan center of the bottom face: shifted opposite to the lean direction.
+  const faceCenterX = placement.position[0] - (height / 2) * sinT * cosY;
+  const faceCenterY = placement.position[1] - (height / 2) * sinT * sinY;
+  const halfU = (length / 2) * Math.abs(cosT);
+  const halfV = placement.dimensionsMm.width / 2;
+  const reachX = Math.abs(cosY) * halfU + Math.abs(sinY) * halfV + margin;
+  const reachY = Math.abs(sinY) * halfU + Math.abs(cosY) * halfV + margin;
+  const c0 = Math.floor((faceCenterX - reachX - map.origin[0]) / map.stepMm);
+  const c1 = Math.ceil((faceCenterX + reachX - map.origin[0]) / map.stepMm);
+  const r0 = Math.floor((faceCenterY - reachY - map.origin[1]) / map.stepMm);
+  const r1 = Math.ceil((faceCenterY + reachY - map.origin[1]) / map.stepMm);
+  if (c0 < 0 || c1 >= map.columns || r0 < 0 || r1 >= map.rows) return Infinity;
+  const cosSafe = Math.max(Math.abs(cosT), 1e-6);
+  const base = map.levels[0];
+  let minCenterZ = -Infinity;
+  for (let row = r0; row <= r1; row += 1) {
+    const dy = map.origin[1] + row * map.stepMm - faceCenterY;
+    for (let column = c0; column <= c1; column += 1) {
+      const dx = map.origin[0] + column * map.stepMm - faceCenterX;
+      const uPlan = dx * cosY + dy * sinY;
+      if (Math.abs(uPlan) > halfU + margin) continue;
+      const v = -dx * sinY + dy * cosY;
+      if (Math.abs(v) > halfV + margin) continue;
+      const depth = base[row * map.columns + column];
+      if (depth === 0) return Infinity;
+      const u = uPlan / cosSafe;
+      const floorZ = topZ - depth * map.quantizationMm;
+      minCenterZ = Math.max(minCenterZ, floorZ + u * sinT + (height / 2) * cosT);
+    }
+  }
+  return Number.isFinite(minCenterZ) ? minCenterZ : Infinity;
+}
+
+/** Vertical half-extent of a pitched component's bounding box. */
+export function componentHalfHeight(placement: ComponentPlacement): number {
+  const tilt = (placement.tiltDeg * Math.PI) / 180;
+  return (
+    (placement.dimensionsMm.length / 2) * Math.abs(Math.sin(tilt)) +
+    (placement.dimensionsMm.height / 2) * Math.abs(Math.cos(tilt))
+  );
 }
 
 function boxFootprint(box: Box3D): Footprint2D {
@@ -614,12 +684,18 @@ export function componentBox(placement: ComponentPlacement, enclosure: Enclosure
     maxX = Math.max(maxX, x);
     maxY = Math.max(maxY, y);
   }
-  const height = placement.dimensionsMm.height;
-  const floorZ =
-    enclosure.kind === "box"
-      ? -enclosure.dimensionsMm.height / 2
-      : enclosure.dimensionsMm.height / 2 - availableDepthForFootprint(enclosure, footprint);
-  return { min: [minX, minY, floorZ], max: [maxX, maxY, floorZ + height] };
+  const halfHeight = componentHalfHeight(placement);
+  const centerZ = settleComponentCenterZ(enclosure, placement);
+  if (!Number.isFinite(centerZ)) {
+    // Unplaceable spot (over a wall / outside the grid): park the box above
+    // the lid so it reads as outside instead of crashing the evaluation.
+    const topZ = enclosure.dimensionsMm.height / 2;
+    return { min: [minX, minY, topZ], max: [maxX, maxY, topZ + halfHeight * 2] };
+  }
+  return {
+    min: [minX, minY, centerZ - halfHeight],
+    max: [maxX, maxY, centerZ + halfHeight],
+  };
 }
 
 function zRangesOverlap(a: Box3D, b: Box3D): boolean {
@@ -652,11 +728,17 @@ export function evaluateWorkspace(
         zRangesOverlap(box, boxes[otherIndex]) &&
         footprintsIntersect(footprint, other),
     );
+    // componentBox already settles the (possibly pitched) part onto the floor
+    // or parks it above the lid when unplaceable, so the lid plane and the
+    // plan bounds are all that is left to verify.
     const outside =
       enclosure.kind === "box"
         ? !containsBox(container, box)
         : box.max[2] > topZ + EPSILON ||
-          availableDepthForFootprint(enclosure, footprint) + EPSILON < topZ - box.min[2];
+          box.min[0] < container.min[0] - EPSILON ||
+          box.max[0] > container.max[0] + EPSILON ||
+          box.min[1] < container.min[1] - EPSILON ||
+          box.max[1] > container.max[1] + EPSILON;
     return {
       id: component.id,
       box,

@@ -60,6 +60,7 @@ const placementSchema = z
     componentId: z.string(),
     position: z.tuple([z.number(), z.number()]),
     rotationDeg: z.number().optional(),
+    tiltDeg: z.number().optional(),
     // Legacy field from before free-angle rotation existed.
     rotationQuarterTurns: z.number().int().optional(),
     dimensionsMm: dimensionsSchema,
@@ -70,6 +71,7 @@ const placementSchema = z
       componentId: placement.componentId,
       position: placement.position,
       rotationDeg: placement.rotationDeg ?? (placement.rotationQuarterTurns ?? 0) * 90,
+      tiltDeg: placement.tiltDeg ?? 0,
       dimensionsMm: placement.dimensionsMm,
     }),
   );

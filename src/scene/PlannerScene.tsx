@@ -645,11 +645,12 @@ function ComponentObjects({
     };
     const renderedSpec = spec ?? fallbackSpec;
     const rotationZ = (component.rotationDeg * Math.PI) / 180;
+    const rotationTilt = (component.tiltDeg * Math.PI) / 180;
     return (
       <group key={component.id}>
         <group
           position={center}
-          rotation={[0, 0, rotationZ]}
+          rotation={[0, rotationTilt, rotationZ, "ZYX"]}
           onPointerDown={(event) => onPointerDown(event, component.id)}
           onContextMenu={(event) => onContextMenu(event, component.id)}
         >

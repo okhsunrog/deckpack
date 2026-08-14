@@ -213,6 +213,11 @@ export interface ComponentPlacement {
   position: [number, number];
   /** Yaw around Z in degrees; any angle, not just quarter turns. */
   rotationDeg: number;
+  /**
+   * Pitch around the component's width axis in degrees, applied before yaw.
+   * Positive tilts the +length end down, e.g. to lay a board along a ramp.
+   */
+  tiltDeg: number;
   dimensionsMm: Dimensions3D;
 }
 

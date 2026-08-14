@@ -132,12 +132,23 @@ function PlacementEditor({
       </div>
       <div className="rotation-controls">
         <NumberField
-          label="Угол"
+          label="Поворот"
           value={placement.rotationDeg}
           step={5}
           unit="°"
           onChange={(value) =>
             updateComponent(placement.id, { rotationDeg: normalizeAngleDeg(value) })
+          }
+        />
+        <NumberField
+          label="Наклон"
+          value={placement.tiltDeg}
+          min={-75}
+          max={75}
+          step={1}
+          unit="°"
+          onChange={(value) =>
+            updateComponent(placement.id, { tiltDeg: Math.max(-75, Math.min(75, value)) })
           }
         />
         <button
