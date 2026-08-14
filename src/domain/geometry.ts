@@ -1,13 +1,16 @@
 import type {
+  Axis,
   Box3D,
   ComponentPlacement,
   Dimensions3D,
   EnclosureSpec,
   LargestFreeBox,
+  MeshHeightMapEnclosureSpec,
   PackPlan,
   Vec3,
   WorkspaceEvaluation,
 } from "./types";
+import { getHeightMapAsset } from "../data/enclosures";
 
 const EPSILON = 1e-6;
 
@@ -37,6 +40,261 @@ export const boxContainmentKernel: ContainmentKernel<EnclosureSpec> = {
   volume(spec) {
     const { length, width, height } = spec.dimensionsMm;
     return length * width * height;
+  },
+};
+
+interface CompiledHeightMap {
+  columns: number;
+  rows: number;
+  origin: [number, number];
+  stepMm: number;
+  quantizationMm: number;
+  safetyMarginMm: number;
+  /** Sparse min-tables along columns: levels[k][row*columns+c] = min depth over c..c+2^k-1. */
+  levels: Uint8Array[];
+  /** Sparse min-tables along rows: rowLevels[k][r*columns+column] = min depth over r..r+2^k-1. */
+  rowLevels: Uint8Array[];
+}
+
+const compiledHeightMaps = new Map<string, CompiledHeightMap>();
+
+function decodeBase64Bytes(value: string): Uint8Array {
+  const decoded = atob(value);
+  const bytes = new Uint8Array(decoded.length);
+  for (let index = 0; index < decoded.length; index += 1) bytes[index] = decoded.charCodeAt(index);
+  return bytes;
+}
+
+function compiledHeightMap(spec: EnclosureSpec): CompiledHeightMap {
+  if (spec.kind !== "mesh-heightmap") throw new Error("Height map enclosure required");
+  const cached = compiledHeightMaps.get(spec.assetId);
+  if (cached) return cached;
+  const asset = getHeightMapAsset(spec);
+  const { columns, rows } = asset.depthMap;
+  const base = decodeBase64Bytes(asset.depthMap.dataBase64);
+  if (base.length !== columns * rows) throw new Error(`Invalid height map: ${spec.assetId}`);
+  const levels = [base];
+  for (let span = 1; span * 2 <= columns; span *= 2) {
+    const previous = levels.at(-1)!;
+    const next = new Uint8Array(previous.length);
+    for (let row = 0; row < rows; row += 1) {
+      const rowOffset = row * columns;
+      for (let column = 0; column < columns; column += 1) {
+        const right = Math.min(columns - 1, column + span);
+        next[rowOffset + column] = Math.min(
+          previous[rowOffset + column],
+          previous[rowOffset + right],
+        );
+      }
+    }
+    levels.push(next);
+  }
+  const rowLevels = [base];
+  for (let span = 1; span * 2 <= rows; span *= 2) {
+    const previous = rowLevels.at(-1)!;
+    const next = new Uint8Array(previous.length);
+    for (let row = 0; row < rows; row += 1) {
+      const below = Math.min(rows - 1, row + span);
+      for (let column = 0; column < columns; column += 1) {
+        next[row * columns + column] = Math.min(
+          previous[row * columns + column],
+          previous[below * columns + column],
+        );
+      }
+    }
+    rowLevels.push(next);
+  }
+  const compiled: CompiledHeightMap = {
+    columns,
+    rows,
+    origin: asset.depthMap.originMm,
+    stepMm: asset.depthMap.stepMm,
+    quantizationMm: asset.depthMap.depthQuantizationMm,
+    safetyMarginMm: asset.depthMap.safetyMarginMm,
+    levels,
+    rowLevels,
+  };
+  compiledHeightMaps.set(spec.assetId, compiled);
+  return compiled;
+}
+
+function rowRangeMinimum(
+  map: CompiledHeightMap,
+  row: number,
+  firstColumn: number,
+  lastColumn: number,
+): number {
+  const length = lastColumn - firstColumn + 1;
+  const level = Math.floor(Math.log2(length));
+  const span = 2 ** level;
+  const values = map.levels[level];
+  const rowOffset = row * map.columns;
+  return Math.min(values[rowOffset + firstColumn], values[rowOffset + lastColumn - span + 1]);
+}
+
+function columnRangeMinimum(
+  map: CompiledHeightMap,
+  column: number,
+  firstRow: number,
+  lastRow: number,
+): number {
+  const length = lastRow - firstRow + 1;
+  const level = Math.floor(Math.log2(length));
+  const span = 2 ** level;
+  const values = map.rowLevels[level];
+  return Math.min(
+    values[firstRow * map.columns + column],
+    values[(lastRow - span + 1) * map.columns + column],
+  );
+}
+
+export function availableDepthForBox(spec: EnclosureSpec, object: Box3D): number {
+  if (spec.kind === "box") return spec.dimensionsMm.height;
+  const map = compiledHeightMap(spec);
+  const margin = map.safetyMarginMm;
+  const firstColumn = Math.floor((object.min[0] - margin - map.origin[0]) / map.stepMm);
+  const lastColumn = Math.ceil((object.max[0] + margin - map.origin[0]) / map.stepMm);
+  const firstRow = Math.floor((object.min[1] - margin - map.origin[1]) / map.stepMm);
+  const lastRow = Math.ceil((object.max[1] + margin - map.origin[1]) / map.stepMm);
+  if (firstColumn < 0 || lastColumn >= map.columns || firstRow < 0 || lastRow >= map.rows) {
+    return 0;
+  }
+  let minimum = 255;
+  for (let row = firstRow; row <= lastRow; row += 1) {
+    minimum = Math.min(minimum, rowRangeMinimum(map, row, firstColumn, lastColumn));
+    if (minimum === 0) return 0;
+  }
+  return minimum * map.quantizationMm;
+}
+
+/**
+ * A finished cell as the profile kernel sees it: the axis-aligned cylinder that
+ * must clear the enclosure's inner surface. Radius and half-length include the
+ * per-cell tolerance layers plus the outer wrap.
+ */
+export interface ProfileCylinder {
+  centerXmm: number;
+  centerYmm: number;
+  axis: Axis;
+  radiusMm: number;
+  halfLengthMm: number;
+}
+
+/** Highest allowed cylinder-center z before the cell pokes through the lid plane. */
+export function cylinderTopLimitZ(
+  spec: MeshHeightMapEnclosureSpec,
+  cylinder: ProfileCylinder,
+): number {
+  const topZ = spec.dimensionsMm.height / 2;
+  return topZ - (cylinder.axis === "z" ? cylinder.halfLengthMm : cylinder.radiusMm);
+}
+
+/**
+ * Lowest cylinder-center z at which the cell does not penetrate the inner
+ * surface of the enclosure. For a horizontal cylinder the lower surface rises
+ * toward the sides by sqrt(r² − d²), so a cell may legitimately overhang a ramp
+ * that its bounding box would collide with. Returns Infinity when the footprint
+ * leaves the sampled grid (treated as a wall).
+ */
+export function minCylinderCenterZ(
+  spec: MeshHeightMapEnclosureSpec,
+  cylinder: ProfileCylinder,
+): number {
+  const map = compiledHeightMap(spec);
+  const { stepMm, quantizationMm } = map;
+  const margin = map.safetyMarginMm;
+  const halfStep = stepMm / 2;
+  const topZ = spec.dimensionsMm.height / 2;
+  const { centerXmm, centerYmm, radiusMm, halfLengthMm } = cylinder;
+  const columnAt = (x: number) => (x - map.origin[0]) / stepMm;
+  const rowAt = (y: number) => (y - map.origin[1]) / stepMm;
+
+  if (cylinder.axis === "x" || cylinder.axis === "y") {
+    const axialAlongX = cylinder.axis === "x";
+    const axial = axialAlongX ? centerXmm : centerYmm;
+    const lateral = axialAlongX ? centerYmm : centerXmm;
+    const toAxial = axialAlongX ? columnAt : rowAt;
+    const toLateral = axialAlongX ? rowAt : columnAt;
+    const axialLimit = axialAlongX ? map.columns : map.rows;
+    const lateralLimit = axialAlongX ? map.rows : map.columns;
+    const a0 = Math.floor(toAxial(axial - halfLengthMm - margin));
+    const a1 = Math.ceil(toAxial(axial + halfLengthMm + margin));
+    const l0 = Math.floor(toLateral(lateral - radiusMm - margin));
+    const l1 = Math.ceil(toLateral(lateral + radiusMm + margin));
+    if (a0 < 0 || a1 >= axialLimit || l0 < 0 || l1 >= lateralLimit) return Infinity;
+    let minCenter = -Infinity;
+    for (let line = l0; line <= l1; line += 1) {
+      const lineCoordinate = (axialAlongX ? map.origin[1] : map.origin[0]) + line * stepMm;
+      const offset = Math.max(0, Math.abs(lineCoordinate - lateral) - halfStep - margin);
+      if (offset >= radiusMm) continue;
+      const depth =
+        (axialAlongX ? rowRangeMinimum(map, line, a0, a1) : columnRangeMinimum(map, line, a0, a1)) *
+        quantizationMm;
+      const surfaceDrop = Math.sqrt(radiusMm * radiusMm - offset * offset);
+      minCenter = Math.max(minCenter, topZ - depth + surfaceDrop);
+    }
+    return minCenter;
+  }
+
+  const r0 = Math.floor(rowAt(centerYmm - radiusMm - margin));
+  const r1 = Math.ceil(rowAt(centerYmm + radiusMm + margin));
+  if (r0 < 0 || r1 >= map.rows) return Infinity;
+  let minCenter = -Infinity;
+  for (let row = r0; row <= r1; row += 1) {
+    const y = map.origin[1] + row * stepMm;
+    const offset = Math.max(0, Math.abs(y - centerYmm) - halfStep - margin);
+    if (offset >= radiusMm) continue;
+    const halfWidth = Math.sqrt(radiusMm * radiusMm - offset * offset);
+    const c0 = Math.floor(columnAt(centerXmm - halfWidth - margin));
+    const c1 = Math.ceil(columnAt(centerXmm + halfWidth + margin));
+    if (c0 < 0 || c1 >= map.columns) return Infinity;
+    const depth = rowRangeMinimum(map, row, c0, c1) * quantizationMm;
+    minCenter = Math.max(minCenter, topZ - depth + halfLengthMm);
+  }
+  return minCenter;
+}
+
+/** True when the cylinder at its given center z fits the profile and the lid. */
+export function cylinderFitsProfile(
+  spec: MeshHeightMapEnclosureSpec,
+  cylinder: ProfileCylinder,
+  centerZmm: number,
+): boolean {
+  return (
+    centerZmm + EPSILON >= minCylinderCenterZ(spec, cylinder) &&
+    centerZmm <= cylinderTopLimitZ(spec, cylinder) + EPSILON
+  );
+}
+
+export const enclosureContainmentKernel: ContainmentKernel<EnclosureSpec> = {
+  bounds: enclosureBounds,
+  contains(spec, object) {
+    if (spec.kind === "box") return boxContainmentKernel.contains(spec, object);
+    const container = enclosureBounds(spec);
+    const topZ = container.max[2];
+    const requiredDepth = topZ - object.min[2];
+    return (
+      object.max[2] <= topZ + EPSILON &&
+      object.min[2] >= container.min[2] - EPSILON &&
+      availableDepthForBox(spec, object) + EPSILON >= requiredDepth
+    );
+  },
+  clearance(spec, object) {
+    if (spec.kind === "box") return boxContainmentKernel.clearance(spec, object);
+    const container = enclosureBounds(spec);
+    const floorZ = container.max[2] - availableDepthForBox(spec, object);
+    return Math.min(
+      object.min[0] - container.min[0],
+      container.max[0] - object.max[0],
+      object.min[1] - container.min[1],
+      container.max[1] - object.max[1],
+      object.min[2] - floorZ,
+      container.max[2] - object.max[2],
+    );
+  },
+  volume(spec) {
+    if (spec.kind === "box") return boxContainmentKernel.volume(spec);
+    return getHeightMapAsset(spec).depthMap.usableVolumeMm3;
   },
 };
 
@@ -155,6 +413,74 @@ export function largestEmptyAxisAlignedBox(container: Box3D, obstacles: Box3D[])
   return best;
 }
 
+export function clipBoxToContainer(container: Box3D, box: Box3D): Box3D | undefined {
+  const min: Vec3 = [0, 0, 0];
+  const max: Vec3 = [0, 0, 0];
+  for (let axis = 0; axis < 3; axis += 1) {
+    min[axis] = Math.max(container.min[axis], box.min[axis]);
+    max[axis] = Math.min(container.max[axis], box.max[axis]);
+    if (max[axis] - min[axis] <= 0) return undefined;
+  }
+  return { min, max };
+}
+
+/** Exact volume of the union of boxes clipped to the container (no double counting). */
+export function unionVolumeMm3(container: Box3D, boxes: Box3D[]): number {
+  const clipped = boxes
+    .map((box) => clipBoxToContainer(container, box))
+    .filter((box): box is Box3D => box !== undefined);
+  if (clipped.length === 0) return 0;
+  const coordinates = ([0, 1, 2] as const).map((axis) => {
+    const values = new Set<number>();
+    for (const box of clipped) {
+      values.add(box.min[axis]);
+      values.add(box.max[axis]);
+    }
+    return [...values].sort((a, b) => a - b);
+  });
+  const [xs, ys, zs] = coordinates;
+  const nx = xs.length - 1;
+  const ny = ys.length - 1;
+  const nz = zs.length - 1;
+  const occupied = new Uint8Array(nx * ny * nz);
+  const indexOf = (values: number[], value: number) => {
+    let low = 0;
+    let high = values.length - 1;
+    while (low < high) {
+      const mid = (low + high) >> 1;
+      if (values[mid] < value) low = mid + 1;
+      else high = mid;
+    }
+    return low;
+  };
+  for (const box of clipped) {
+    const x0 = indexOf(xs, box.min[0]);
+    const x1 = indexOf(xs, box.max[0]);
+    const y0 = indexOf(ys, box.min[1]);
+    const y1 = indexOf(ys, box.max[1]);
+    const z0 = indexOf(zs, box.min[2]);
+    const z1 = indexOf(zs, box.max[2]);
+    for (let x = x0; x < x1; x += 1) {
+      for (let y = y0; y < y1; y += 1) {
+        for (let z = z0; z < z1; z += 1) {
+          occupied[(x * ny + y) * nz + z] = 1;
+        }
+      }
+    }
+  }
+  let volume = 0;
+  for (let x = 0; x < nx; x += 1) {
+    const dx = xs[x + 1] - xs[x];
+    for (let y = 0; y < ny; y += 1) {
+      const area = dx * (ys[y + 1] - ys[y]);
+      for (let z = 0; z < nz; z += 1) {
+        if (occupied[(x * ny + y) * nz + z]) volume += area * (zs[z + 1] - zs[z]);
+      }
+    }
+  }
+  return volume;
+}
+
 export function dimensionsToVec3(dimensions: Dimensions3D): Vec3 {
   return [dimensions.length, dimensions.width, dimensions.height];
 }
@@ -164,8 +490,21 @@ export function componentBox(placement: ComponentPlacement, enclosure: Enclosure
   const size: Vec3 = rotated
     ? [placement.dimensionsMm.width, placement.dimensionsMm.length, placement.dimensionsMm.height]
     : dimensionsToVec3(placement.dimensionsMm);
-  const z = -enclosure.dimensionsMm.height / 2 + size[2] / 2;
-  return boxFromCenterSize([placement.position[0], placement.position[1], z], size);
+  if (enclosure.kind === "box") {
+    const z = -enclosure.dimensionsMm.height / 2 + size[2] / 2;
+    return boxFromCenterSize([placement.position[0], placement.position[1], z], size);
+  }
+  const footprint = boxFromCenterSize(
+    [placement.position[0], placement.position[1], 0],
+    [size[0], size[1], 0],
+  );
+  const availableDepth = availableDepthForBox(enclosure, footprint);
+  const topZ = enclosure.dimensionsMm.height / 2;
+  const floorZ = topZ - availableDepth;
+  return boxFromCenterSize(
+    [placement.position[0], placement.position[1], floorZ + size[2] / 2],
+    size,
+  );
 }
 
 export function evaluateWorkspace(
@@ -189,18 +528,24 @@ export function evaluateWorkspace(
       id: component.id,
       box,
       collides: collidesPack || collidesComponent,
-      outside: !containsBox(container, box),
+      outside: !enclosureContainmentKernel.contains(enclosure, box),
     };
   });
   const allObstacles = [...packObstacles, ...boxes];
-  const enclosureVolume = boxVolume(container);
-  const occupiedVolume = allObstacles.reduce((sum, box) => sum + boxVolume(box), 0);
+  const enclosureVolume = enclosureContainmentKernel.volume(enclosure);
+  const occupiedVolume = unionVolumeMm3(container, allObstacles);
   const freeVolumeMm3 = Math.max(0, enclosureVolume - occupiedVolume);
+  // The largest free box is only meaningful for a rectangular enclosure; the
+  // profiled case is validated through the height map instead.
+  const largestFreeBox =
+    enclosure.kind === "box"
+      ? largestEmptyAxisAlignedBox(container, allObstacles)
+      : { box: boxFromCenterSize([0, 0, 0], [0, 0, 0]), volumeMm3: 0 };
   return {
     components: evaluated,
     hasCollision: evaluated.some((item) => item.collides || item.outside),
     freeVolumeMm3,
     freePercent: (freeVolumeMm3 / enclosureVolume) * 100,
-    largestFreeBox: largestEmptyAxisAlignedBox(container, allObstacles),
+    largestFreeBox,
   };
 }

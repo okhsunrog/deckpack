@@ -22,7 +22,8 @@ function exportProject() {
   link.href = url;
   link.download = "deckpack-project.json";
   link.click();
-  URL.revokeObjectURL(url);
+  // Revoking synchronously can cancel the download in some browsers.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function App() {
@@ -74,6 +75,8 @@ function App() {
   const totalCells = config.pack.seriesCount * config.pack.parallelCount;
   const packVoltage = config.pack.seriesCount * cell.nominalVoltageV;
   const packEnergyWh = packVoltage * config.pack.parallelCount * cell.capacityAh;
+  const enclosureDimension = (value: number) =>
+    config.enclosure.kind === "mesh-heightmap" ? value.toFixed(1) : value;
 
   return (
     <main className="app-shell">
@@ -118,8 +121,9 @@ function App() {
             <div>
               <span className="eyebrow">Рабочий объём</span>
               <b>
-                {config.enclosure.dimensionsMm.length} × {config.enclosure.dimensionsMm.width} ×{" "}
-                {config.enclosure.dimensionsMm.height} мм
+                {enclosureDimension(config.enclosure.dimensionsMm.length)} ×{" "}
+                {enclosureDimension(config.enclosure.dimensionsMm.width)} ×{" "}
+                {enclosureDimension(config.enclosure.dimensionsMm.height)} мм
               </b>
             </div>
             <div className="scene-legend">
@@ -181,7 +185,11 @@ function App() {
                   : "Геометрия валидна"}
             </div>
           </div>
-          <MetricsBar plan={selectedPlan} evaluation={evaluation} />
+          <MetricsBar
+            plan={selectedPlan}
+            evaluation={evaluation}
+            profiled={config.enclosure.kind === "mesh-heightmap"}
+          />
         </section>
 
         <ResultsPanel

@@ -5,7 +5,12 @@ import type { ComponentPlacement, PackPlan, WorkspaceEvaluation } from "../domai
 import { usePlannerStore } from "../store/planner-store";
 import { NumberField } from "./NumberField";
 
-const ANCHOR_LABEL = { tail: "хвост", center: "центр", nose: "нос" } as const;
+const ANCHOR_LABEL = {
+  tail: "хвост",
+  center: "центр",
+  nose: "нос",
+  profile: "по профилю",
+} as const;
 const ORIENTATION_LABEL = { x: "вдоль X", y: "поперёк Y", z: "стоя Z" } as const;
 
 interface ResultsPanelProps {
@@ -162,6 +167,9 @@ export function ResultsPanel({
   const rightPanel = usePlannerStore((state) => state.rightPanel);
   const setRightPanel = usePlannerStore((state) => state.setRightPanel);
   const addComponent = usePlannerStore((state) => state.addComponent);
+  const profiledEnclosure = usePlannerStore(
+    (state) => state.config.enclosure.kind === "mesh-heightmap",
+  );
   const selectedPlacement = placements.find((placement) => placement.id === selectedComponentId);
 
   return (
@@ -194,7 +202,10 @@ export function ResultsPanel({
               <span>Влезает</span>
               <b>{loading ? "…" : plans.length.toLocaleString("ru-RU")}</b>
             </div>
-            <p>Сортировка: центр массы, длина цепи, зазор, свободный BOX.</p>
+            <p>
+              Сортировка: центр массы, длина цепи, зазор
+              {profiledEnclosure ? ", точное вхождение в профиль." : ", свободный BOX."}
+            </p>
           </div>
           {loading && (
             <div className="loading-rule">

@@ -24,6 +24,15 @@ export function useLayoutEngine(config: PlannerConfig, cell: CellSpec): LayoutEn
         return;
       setState({ ...event.data, loading: false });
     };
+    // A crashed enumeration must not leave the UI in an endless loading state.
+    worker.onerror = (event) => {
+      console.error("Layout worker failed", event);
+      setState((current) => ({ ...current, loading: false }));
+    };
+    worker.onmessageerror = (event) => {
+      console.error("Layout worker message failed", event);
+      setState((current) => ({ ...current, loading: false }));
+    };
     return () => {
       worker.terminate();
       workerRef.current = null;

@@ -8,9 +8,11 @@ function formatVolume(valueMm3: number) {
 export function MetricsBar({
   plan,
   evaluation,
+  profiled = false,
 }: {
   plan?: PackPlan;
   evaluation?: WorkspaceEvaluation;
+  profiled?: boolean;
 }) {
   if (!plan) {
     return (
@@ -47,11 +49,19 @@ export function MetricsBar({
         <strong>{formatVolume(evaluation?.freeVolumeMm3 ?? 0)}</strong>
         {evaluation && <small> {evaluation.freePercent.toFixed(0)}%</small>}
       </div>
-      <div className="metric free-box-metric">
-        <span>Крупнейший свободный BOX</span>
-        <strong>{freeSize.map((value) => value.toFixed(0)).join(" × ")}</strong>
-        <small> мм</small>
-      </div>
+      {profiled ? (
+        <div className="metric free-box-metric">
+          <span>Проверка корпуса</span>
+          <strong>0.5</strong>
+          <small> мм / STL</small>
+        </div>
+      ) : (
+        <div className="metric free-box-metric">
+          <span>Крупнейший свободный BOX</span>
+          <strong>{freeSize.map((value) => value.toFixed(0)).join(" × ")}</strong>
+          <small> мм</small>
+        </div>
+      )}
     </div>
   );
 }

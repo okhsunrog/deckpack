@@ -218,6 +218,101 @@
   gap: 7px;
 }
 
+.enclosure-select {
+  margin-bottom: 9px;
+}
+
+.mesh-enclosure-readout {
+  position: relative;
+  display: grid;
+  grid-template-columns: 42px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 70px;
+  padding: 10px;
+  overflow: hidden;
+  border: 1px solid #31505d;
+  border-radius: 3px;
+  background: linear-gradient(102deg, rgb(30 65 76 / 42%), transparent 58%), var(--ink-850);
+}
+
+.mesh-enclosure-readout::after {
+  position: absolute;
+  right: -22px;
+  bottom: -33px;
+  width: 90px;
+  height: 60px;
+  border: 1px solid rgb(83 166 184 / 16%);
+  border-radius: 50%;
+  content: "";
+}
+
+.mesh-enclosure-readout strong,
+.mesh-enclosure-readout span,
+.mesh-enclosure-readout small {
+  display: block;
+}
+
+.mesh-enclosure-readout strong {
+  margin-bottom: 3px;
+  font:
+    600 12px/1.1 "IBM Plex Sans",
+    sans-serif;
+  color: #e7edef;
+}
+
+.mesh-enclosure-readout span,
+.mesh-enclosure-readout small,
+.mesh-enclosure-readout em {
+  font:
+    500 8px/1.4 "JetBrains Mono",
+    monospace;
+}
+
+.mesh-enclosure-readout span {
+  color: #8dc5d0;
+}
+
+.mesh-enclosure-readout small {
+  margin-top: 2px;
+  color: var(--text-faint);
+}
+
+.mesh-enclosure-readout em {
+  align-self: start;
+  padding: 3px 5px;
+  border: 1px solid #3c6977;
+  border-radius: 999px;
+  color: #82cbd7;
+  font-style: normal;
+  letter-spacing: 0.08em;
+}
+
+.mesh-enclosure-mark {
+  position: relative;
+  width: 38px;
+  height: 32px;
+  transform: perspective(48px) rotateX(56deg);
+}
+
+.mesh-enclosure-mark i {
+  position: absolute;
+  inset: 5px 1px auto;
+  height: 16px;
+  border: 1px solid #61a9b8;
+  border-radius: 45% 45% 18% 18%;
+}
+
+.mesh-enclosure-mark i:nth-child(2) {
+  transform: translateY(5px) scale(0.82);
+  opacity: 0.62;
+}
+
+.mesh-enclosure-mark i:nth-child(3) {
+  transform: translateY(10px) scale(0.64);
+  opacity: 0.34;
+}
+
 .number-field,
 .select-field {
   display: flex;

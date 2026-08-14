@@ -1,10 +1,21 @@
 import { Line, OrbitControls, RoundedBox, Text, TransformControls } from "@react-three/drei";
 import { Canvas, type ThreeEvent, useLoader, useThree } from "@react-three/fiber";
-import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  Component,
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   BoxGeometry,
   Color,
   CylinderGeometry,
+  DoubleSide,
+  EdgesGeometry,
   Group,
   InstancedMesh,
   Matrix4,
@@ -15,6 +26,7 @@ import {
   Vector3,
 } from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import { getHeightMapAsset } from "../data/enclosures";
 import { boxCenter, boxSize, componentBox } from "../domain/geometry";
 import type {
   Box3D,
@@ -23,6 +35,7 @@ import type {
   ComponentVisual,
   Dimensions3D,
   EnclosureSpec,
+  MeshHeightMapEnclosureSpec,
   PackPlan,
   ServiceReservation,
   ServiceVolume,
@@ -47,6 +60,36 @@ interface PlannerSceneProps {
 type KeepOutTool = "translate" | "scale";
 
 const CELL_COLORS = ["#d59b45", "#d36d4b", "#809ba2", "#7e927a", "#a77ca0", "#718aaf"];
+
+/**
+ * Suspense only handles the pending state of useLoader; a missing STL or
+ * texture rejects and would otherwise unmount the whole Canvas. Render the
+ * plain fallback instead and keep the rest of the scene alive.
+ */
+class VisualErrorBoundary extends Component<
+  { fallback: ReactNode; children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.error("Visual asset failed to load", error);
+  }
+
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
+/** Dispose the previous Three resource whenever the memoized value changes. */
+function useDisposable<T extends { dispose(): void }>(value: T): T {
+  useEffect(() => () => value.dispose(), [value]);
+  return value;
+}
 
 interface ComponentVisualProps {
   dimensions: Dimensions3D;
@@ -118,6 +161,7 @@ function StlCase({
       ] as Vec3,
     };
   }, [dimensions.height, dimensions.length, dimensions.width, sourceGeometry, visual.rotationDeg]);
+  useDisposable(prepared.geometry);
 
   return (
     <mesh geometry={prepared.geometry} scale={prepared.scale} castShadow receiveShadow>
@@ -207,13 +251,11 @@ function CellInstances({ plan }: { plan: PackPlan }) {
   const meshRef = useRef<InstancedMesh>(null);
   const diameter = Math.min(...plan.cellSizeMm);
   const height = Math.max(...plan.cellSizeMm);
-  const geometry = useMemo(
-    () => new CylinderGeometry(diameter / 2, diameter / 2, height, 20),
-    [diameter, height],
+  const geometry = useDisposable(
+    useMemo(() => new CylinderGeometry(diameter / 2, diameter / 2, height, 20), [diameter, height]),
   );
-  const material = useMemo(
-    () => new MeshStandardMaterial({ roughness: 0.48, metalness: 0.16 }),
-    [],
+  const material = useDisposable(
+    useMemo(() => new MeshStandardMaterial({ roughness: 0.48, metalness: 0.16 }), []),
   );
 
   useLayoutEffect(() => {
@@ -233,7 +275,7 @@ function CellInstances({ plan }: { plan: PackPlan }) {
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     mesh.computeBoundingBox();
     mesh.computeBoundingSphere();
-  });
+  }, [plan]);
 
   return (
     <instancedMesh
@@ -442,8 +484,52 @@ function EditableKeepOut({
   );
 }
 
+function MeshEnclosureObject({ enclosure }: { enclosure: MeshHeightMapEnclosureSpec }) {
+  const asset = getHeightMapAsset(enclosure);
+  const sourceGeometry = useLoader(STLLoader, asset.modelUrl);
+  const geometry = useDisposable(
+    useMemo(() => {
+      const cloned = sourceGeometry.clone();
+      cloned.computeVertexNormals();
+      return cloned;
+    }, [sourceGeometry]),
+  );
+  return (
+    <group>
+      <mesh geometry={geometry} receiveShadow>
+        <meshPhysicalMaterial
+          color="#263840"
+          emissive="#17313a"
+          emissiveIntensity={0.08}
+          transparent
+          opacity={0.34}
+          roughness={0.58}
+          metalness={0.12}
+          clearcoat={0.35}
+          clearcoatRoughness={0.72}
+          side={DoubleSide}
+          depthWrite={false}
+        />
+      </mesh>
+    </group>
+  );
+}
+
 function EnclosureObject({ enclosure }: { enclosure: EnclosureSpec }) {
   const { length, width, height } = enclosure.dimensionsMm;
+  if (enclosure.kind === "mesh-heightmap") {
+    // If the display STL fails to load, fall back to the bounding wireframe;
+    // the height-map collision data is bundled and unaffected.
+    return (
+      <VisualErrorBoundary
+        fallback={<BoxEdges size={[length, width, height]} color="#79909c" opacity={0.62} />}
+      >
+        <Suspense fallback={null}>
+          <MeshEnclosureObject enclosure={enclosure} />
+        </Suspense>
+      </VisualErrorBoundary>
+    );
+  }
   return (
     <group>
       <mesh>
@@ -457,11 +543,35 @@ function EnclosureObject({ enclosure }: { enclosure: EnclosureSpec }) {
           depthWrite={false}
         />
       </mesh>
-      <lineSegments>
-        <edgesGeometry args={[new BoxGeometry(length, width, height)]} />
-        <lineBasicMaterial color="#79909c" transparent opacity={0.62} />
-      </lineSegments>
+      <BoxEdges size={[length, width, height]} color="#79909c" opacity={0.62} />
     </group>
+  );
+}
+
+function BoxEdges({
+  size,
+  color,
+  opacity,
+  position,
+}: {
+  size: Vec3;
+  color: string;
+  opacity?: number;
+  position?: Vec3;
+}) {
+  const [sizeX, sizeY, sizeZ] = size;
+  const edges = useDisposable(
+    useMemo(() => {
+      const box = new BoxGeometry(sizeX, sizeY, sizeZ);
+      const geometry = new EdgesGeometry(box);
+      box.dispose();
+      return geometry;
+    }, [sizeX, sizeY, sizeZ]),
+  );
+  return (
+    <lineSegments geometry={edges} position={position}>
+      <lineBasicMaterial color={color} transparent={opacity !== undefined} opacity={opacity} />
+    </lineSegments>
   );
 }
 
@@ -508,13 +618,19 @@ function ComponentObjects({
           onPointerDown={(event) => onPointerDown(event, component.id)}
           onContextMenu={(event) => onContextMenu(event, component.id)}
         >
-          <Suspense
+          <VisualErrorBoundary
             fallback={
               <PlainCase dimensions={renderedSpec.dimensionsMm} color={renderedSpec.color} />
             }
           >
-            <ComponentVisualObject spec={renderedSpec} />
-          </Suspense>
+            <Suspense
+              fallback={
+                <PlainCase dimensions={renderedSpec.dimensionsMm} color={renderedSpec.color} />
+              }
+            >
+              <ComponentVisualObject spec={renderedSpec} />
+            </Suspense>
+          </VisualErrorBoundary>
           {invalid && (
             <RoundedBox
               args={[
@@ -530,10 +646,11 @@ function ComponentObjects({
           )}
         </group>
         {selected && (
-          <lineSegments position={center}>
-            <edgesGeometry args={[new BoxGeometry(size[0] + 3, size[1] + 3, size[2] + 3)]} />
-            <lineBasicMaterial color="#f5c36b" />
-          </lineSegments>
+          <BoxEdges
+            size={[size[0] + 3, size[1] + 3, size[2] + 3]}
+            color="#f5c36b"
+            position={center}
+          />
         )}
         <Text
           position={[center[0], center[1], box.max[2] + 3]}
@@ -590,6 +707,19 @@ interface SceneContentsProps extends PlannerSceneProps {
 function SceneContents(props: SceneContentsProps) {
   const [dragging, setDragging] = useState<{ id: string; offset: [number, number] }>();
   const { enclosure, plan } = props;
+
+  // The floor plane only sees pointerup inside the canvas; releasing the
+  // button anywhere else must still end the drag and re-enable orbiting.
+  useEffect(() => {
+    if (!dragging) return;
+    const endDrag = () => setDragging(undefined);
+    window.addEventListener("pointerup", endDrag);
+    window.addEventListener("pointercancel", endDrag);
+    return () => {
+      window.removeEventListener("pointerup", endDrag);
+      window.removeEventListener("pointercancel", endDrag);
+    };
+  }, [dragging]);
   const floorZ = -enclosure.dimensionsMm.height / 2 + 0.01;
   const selectedKeepOutVolume = plan?.serviceVolumes.find(
     (volume) => volume.id === props.selectedKeepOutId,

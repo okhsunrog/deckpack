@@ -4,10 +4,13 @@ import {
   createDefaultServiceReservations,
   setWiringExitMode as updateWiringExitMode,
 } from "../domain/service-reservations";
+import { createSparkCaseEnclosure } from "../data/enclosures";
+import { sanitizePersistedConfig, sanitizePersistedPlacements } from "./persisted-state";
 import type {
   ComponentPlacement,
   ComponentSpec,
   Dimensions3D,
+  EnclosureSpec,
   PackRequest,
   PlannerConfig,
   ServiceReservation,
@@ -16,14 +19,11 @@ import type {
 } from "../domain/types";
 
 export const defaultConfig: PlannerConfig = {
-  enclosure: {
-    kind: "box",
-    dimensionsMm: { length: 800, width: 210, height: 34 },
-  },
+  enclosure: createSparkCaseEnclosure(),
   pack: {
     seriesCount: 12,
-    parallelCount: 4,
-    cellId: "molicel-p42a",
+    parallelCount: 3,
+    cellId: "eve-50pl",
     orientation: "auto",
     packingModes: ["brick", "staggered"],
     maxLayers: 2,
@@ -71,7 +71,10 @@ export const defaultConfig: PlannerConfig = {
       },
     ],
     wiringExitMode: "combined",
-    serviceReservations: createDefaultServiceReservations(),
+    serviceReservations: createDefaultServiceReservations().map((reservation) => ({
+      ...reservation,
+      enabled: false,
+    })),
   },
 };
 
@@ -81,6 +84,7 @@ interface PlannerState {
   selectedPlanId?: string;
   selectedComponentId?: string;
   rightPanel: "variants" | "components";
+  setEnclosureKind: (kind: EnclosureSpec["kind"]) => void;
   setEnclosureDimension: (key: keyof Dimensions3D, value: number) => void;
   setPackField: <K extends keyof PackRequest>(key: K, value: PackRequest[K]) => void;
   setTolerance: (id: string, thicknessMm: number) => void;
@@ -105,6 +109,25 @@ export const usePlannerStore = create<PlannerState>()(
       config: freshConfig(),
       placements: [],
       rightPanel: "variants",
+      setEnclosureKind: (kind) =>
+        set((state) => {
+          if (state.config.enclosure.kind === kind) return state;
+          return {
+            config: {
+              ...state.config,
+              enclosure:
+                kind === "mesh-heightmap"
+                  ? createSparkCaseEnclosure()
+                  : {
+                      kind: "box",
+                      dimensionsMm: { length: 800, width: 210, height: 34 },
+                    },
+            },
+            placements: [],
+            selectedPlanId: undefined,
+            selectedComponentId: undefined,
+          };
+        }),
       setEnclosureDimension: (key, value) =>
         set((state) => ({
           config: {
@@ -158,7 +181,7 @@ export const usePlannerStore = create<PlannerState>()(
       setRightPanel: (rightPanel) => set({ rightPanel }),
       addComponent: (spec) =>
         set((state) => {
-          const id = `${spec.id}-${crypto.randomUUID()}`;
+          const id = `${spec.id}-${placementId()}`;
           const tailX =
             -state.config.enclosure.dimensionsMm.length / 2 + spec.dimensionsMm.length / 2 + 5;
           const spreadY = Math.min(state.placements.length * 12, 50);
@@ -199,8 +222,31 @@ export const usePlannerStore = create<PlannerState>()(
         }),
     }),
     {
-      name: "deckpack-project-v1",
+      name: "deckpack-spark-project-v2",
       version: 2,
+      // Older stored versions are dropped: the layout engine and defaults
+      // changed, so a fresh project is safer than a partial migration.
+      migrate: () => ({
+        config: freshConfig(),
+        placements: [],
+        selectedPlanId: undefined,
+      }),
+      merge: (persisted, current) => {
+        const stored = (persisted ?? {}) as Partial<{
+          config: unknown;
+          placements: unknown;
+          selectedPlanId: unknown;
+        }>;
+        const config = sanitizePersistedConfig(stored.config);
+        const placements = sanitizePersistedPlacements(stored.placements);
+        return {
+          ...current,
+          config: config ?? freshConfig(),
+          placements: config ? (placements ?? []) : [],
+          selectedPlanId:
+            typeof stored.selectedPlanId === "string" ? stored.selectedPlanId : undefined,
+        };
+      },
       partialize: (state) => ({
         config: state.config,
         placements: state.placements,
@@ -209,6 +255,14 @@ export const usePlannerStore = create<PlannerState>()(
     },
   ),
 );
+
+/** crypto.randomUUID is unavailable outside secure contexts (e.g. LAN http). */
+function placementId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 export function toleranceById(stack: ToleranceLayer[], id: string) {
   return stack.find((layer) => layer.id === id);

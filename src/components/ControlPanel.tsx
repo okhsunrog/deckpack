@@ -1,4 +1,5 @@
 import { cellsLibrary } from "../data/library";
+import { sparkCaseAsset } from "../data/enclosures";
 import { activeServiceReservations, separatedOffsets } from "../domain/service-reservations";
 import type {
   Axis,
@@ -18,7 +19,7 @@ const ORIENTATIONS: Array<{ value: PackRequest["orientation"]; label: string }> 
   { value: "z", label: "Стоя Z" },
 ];
 
-const FACE_LABELS: Record<string, string> = {
+const FACE_LABELS: Record<PackFace, string> = {
   "positive-x": "+X нос",
   "negative-x": "−X хвост",
   "positive-y": "+Y борт",
@@ -26,6 +27,7 @@ const FACE_LABELS: Record<string, string> = {
 };
 
 export function ControlPanel({ config }: { config: PlannerConfig }) {
+  const setEnclosureKind = usePlannerStore((state) => state.setEnclosureKind);
   const setEnclosureDimension = usePlannerStore((state) => state.setEnclosureDimension);
   const setPackField = usePlannerStore((state) => state.setPackField);
   const setTolerance = usePlannerStore((state) => state.setTolerance);
@@ -141,31 +143,67 @@ export function ControlPanel({ config }: { config: PlannerConfig }) {
       <section className="control-section">
         <div className="section-title">
           <h3>Внутренний объём</h3>
-          <span>BOX / MM</span>
+          <span>{config.enclosure.kind === "box" ? "BOX / MM" : "STL / 0.5 MM"}</span>
         </div>
-        <div className="dimension-grid">
-          <NumberField
-            label="Длина X"
-            value={config.enclosure.dimensionsMm.length}
-            min={100}
-            unit="мм"
-            onChange={(value) => setEnclosureDimension("length", value)}
-          />
-          <NumberField
-            label="Ширина Y"
-            value={config.enclosure.dimensionsMm.width}
-            min={50}
-            unit="мм"
-            onChange={(value) => setEnclosureDimension("width", value)}
-          />
-          <NumberField
-            label="Высота Z"
-            value={config.enclosure.dimensionsMm.height}
-            min={10}
-            unit="мм"
-            onChange={(value) => setEnclosureDimension("height", value)}
-          />
-        </div>
+        <label className="select-field enclosure-select">
+          <span>Форма корпуса</span>
+          <select
+            aria-label="Форма корпуса"
+            value={config.enclosure.kind}
+            onChange={(event) =>
+              setEnclosureKind(event.currentTarget.value as "box" | "mesh-heightmap")
+            }
+          >
+            <option value="mesh-heightmap">Spark case · точная STL</option>
+            <option value="box">Параллелепипед</option>
+          </select>
+        </label>
+        {config.enclosure.kind === "mesh-heightmap" ? (
+          <div className="mesh-enclosure-readout">
+            <div className="mesh-enclosure-mark" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </div>
+            <div>
+              <strong>{sparkCaseAsset.label}</strong>
+              <span>
+                {sparkCaseAsset.dimensionsMm.length.toFixed(1)} ×{" "}
+                {sparkCaseAsset.dimensionsMm.width.toFixed(1)} ×{" "}
+                {sparkCaseAsset.dimensionsMm.height.toFixed(1)} мм
+              </span>
+              <small>
+                {sparkCaseAsset.meshTriangles.toLocaleString("ru-RU")} треугольников · внутренняя
+                поверхность
+              </small>
+            </div>
+            <em>EXACT</em>
+          </div>
+        ) : (
+          <div className="dimension-grid">
+            <NumberField
+              label="Длина X"
+              value={config.enclosure.dimensionsMm.length}
+              min={100}
+              unit="мм"
+              onChange={(value) => setEnclosureDimension("length", value)}
+            />
+            <NumberField
+              label="Ширина Y"
+              value={config.enclosure.dimensionsMm.width}
+              min={50}
+              unit="мм"
+              onChange={(value) => setEnclosureDimension("width", value)}
+            />
+            <NumberField
+              label="Высота Z"
+              value={config.enclosure.dimensionsMm.height}
+              min={10}
+              unit="мм"
+              onChange={(value) => setEnclosureDimension("height", value)}
+            />
+          </div>
+        )}
       </section>
 
       <section className="control-section">

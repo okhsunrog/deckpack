@@ -2,7 +2,7 @@ export type Vec3 = [number, number, number];
 export type Axis = "x" | "y" | "z";
 export type CellOrientation = Axis;
 export type PackingMode = "brick" | "staggered";
-export type PlacementAnchor = "tail" | "center" | "nose";
+export type PlacementAnchor = "tail" | "center" | "nose" | "profile";
 
 export interface Dimensions3D {
   length: number;
@@ -94,10 +94,18 @@ export interface ServiceReservation {
   enabled: boolean;
 }
 
-export interface EnclosureSpec {
+export interface BoxEnclosureSpec {
   kind: "box";
   dimensionsMm: Dimensions3D;
 }
+
+export interface MeshHeightMapEnclosureSpec {
+  kind: "mesh-heightmap";
+  assetId: string;
+  dimensionsMm: Dimensions3D;
+}
+
+export type EnclosureSpec = BoxEnclosureSpec | MeshHeightMapEnclosureSpec;
 
 export interface PackRequest {
   seriesCount: number;
