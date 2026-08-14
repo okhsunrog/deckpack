@@ -51,7 +51,15 @@ export const defaultConfig: PlannerConfig = {
         kind: "compound",
         scope: "cell",
         application: "between-cells",
-        thicknessMm: 0.8,
+        thicknessMm: 0.2,
+      },
+      {
+        id: "holder-wall",
+        label: "Стенка холдера",
+        kind: "holder",
+        scope: "cell",
+        application: "between-cells",
+        thicknessMm: 1.2,
       },
       {
         id: "group-separator",

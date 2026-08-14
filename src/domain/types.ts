@@ -65,7 +65,7 @@ export interface CellSpec {
   source: SourceMetadata;
 }
 
-export type ToleranceKind = "nickel" | "fishpaper" | "compound" | "outer-wrap";
+export type ToleranceKind = "nickel" | "fishpaper" | "compound" | "holder" | "outer-wrap";
 export type ToleranceScope = "cell" | "series-group" | "pack-block";
 export type ToleranceApplication =
   | "radial"

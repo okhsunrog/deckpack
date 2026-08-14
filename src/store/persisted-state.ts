@@ -23,7 +23,7 @@ const enclosureSchema = z.discriminatedUnion("kind", [
 const toleranceLayerSchema = z.object({
   id: z.string(),
   label: z.string(),
-  kind: z.enum(["nickel", "fishpaper", "compound", "outer-wrap"]),
+  kind: z.enum(["nickel", "fishpaper", "compound", "holder", "outer-wrap"]),
   scope: z.enum(["cell", "series-group", "pack-block"]),
   application: z.enum(["radial", "axial-ends", "between-cells", "between-groups", "all-faces"]),
   thicknessMm: z.number().nonnegative(),
@@ -93,6 +93,22 @@ export function sanitizePersistedConfig(value: unknown): PlannerConfig | undefin
     !enclosureAssets.some((asset) => asset.id === enclosure.assetId)
   ) {
     return undefined;
+  }
+  // Projects stored before the holder-wall layer existed: add it and move the
+  // old default compound gap into the holder wall instead of stacking both.
+  if (!config.pack.toleranceStack.some((layer) => layer.kind === "holder")) {
+    const compound = config.pack.toleranceStack.find(
+      (layer) => layer.application === "between-cells",
+    );
+    if (compound && Math.abs(compound.thicknessMm - 0.8) < 1e-9) compound.thicknessMm = 0.2;
+    config.pack.toleranceStack.push({
+      id: "holder-wall",
+      label: "Стенка холдера",
+      kind: "holder",
+      scope: "cell",
+      application: "between-cells",
+      thicknessMm: 1.2,
+    });
   }
   return config;
 }

@@ -6,9 +6,21 @@ import { ResultsPanel } from "./components/ResultsPanel";
 import { useLayoutEngine } from "./components/use-layout-engine";
 import { componentsLibrary, getCell } from "./data/library";
 import { evaluateWorkspace } from "./domain/geometry";
+import { generateHolder } from "./domain/holder";
 import { activeServiceReservations } from "./domain/service-reservations";
 import { PlannerScene } from "./scene/PlannerScene";
 import { usePlannerStore } from "./store/planner-store";
+import type { CellSpec, PackPlan } from "./domain/types";
+
+function download(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  // Revoking synchronously can cancel the download in some browsers.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 function exportProject() {
   const state = usePlannerStore.getState();
@@ -17,13 +29,27 @@ function exportProject() {
     null,
     2,
   );
-  const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "deckpack-project.json";
-  link.click();
-  // Revoking synchronously can cancel the download in some browsers.
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  download(new Blob([payload], { type: "application/json" }), "deckpack-project.json");
+}
+
+function exportHolder(plan: PackPlan, cell: CellSpec) {
+  const state = usePlannerStore.getState();
+  try {
+    const build = generateHolder(plan, cell, state.config.pack.toleranceStack);
+    const thinnest = Math.min(...build.pieces.map((piece) => piece.minWallMm));
+    download(
+      new Blob([build.stl], { type: "model/stl" }),
+      `deckpack-holder-${plan.packingMode}.stl`,
+    );
+    if (thinnest < 0.4) {
+      window.alert(
+        `Внимание: минимальная стенка холдера ${thinnest.toFixed(2)} мм. ` +
+          "Увеличьте слой «Стенка холдера» (staggered) или Group separator (brick).",
+      );
+    }
+  } catch (error) {
+    window.alert(`Не удалось сгенерировать холдер: ${(error as Error).message}`);
+  }
 }
 
 function App() {
@@ -104,6 +130,14 @@ function App() {
           </small>
         </div>
         <div className="header-actions">
+          <button
+            type="button"
+            disabled={!selectedPlan || selectedPlan.orientation === "z"}
+            title="STL волновых ложементов под выбранную раскладку"
+            onClick={() => selectedPlan && exportHolder(selectedPlan, cell)}
+          >
+            Холдер STL
+          </button>
           <button type="button" onClick={exportProject}>
             Экспорт JSON
           </button>
