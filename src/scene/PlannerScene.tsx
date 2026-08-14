@@ -229,7 +229,9 @@ function CellInstances({ plan }: { plan: PackPlan }) {
     });
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-  }, [plan]);
+    mesh.computeBoundingBox();
+    mesh.computeBoundingSphere();
+  });
 
   return (
     <instancedMesh
