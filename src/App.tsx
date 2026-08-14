@@ -32,6 +32,7 @@ function App() {
   const setSelectedPlanId = usePlannerStore((state) => state.setSelectedPlanId);
   const setSelectedComponentId = usePlannerStore((state) => state.setSelectedComponentId);
   const updateComponent = usePlannerStore((state) => state.updateComponent);
+  const setService = usePlannerStore((state) => state.setService);
   const resetProject = usePlannerStore((state) => state.resetProject);
   const cell = getCell(config.pack.cellId);
   const { plans, exploredCount, loading } = useLayoutEngine(config, cell);
@@ -125,6 +126,8 @@ function App() {
               selectedComponentId={selectedComponentId}
               onSelectComponent={setSelectedComponentId}
               onMoveComponent={(id, position) => updateComponent(id, { position })}
+              serviceReservations={config.pack.serviceReservations}
+              onUpdateService={setService}
             />
             <div className="axis-ruler" aria-hidden="true">
               <span className="ruler-label tail">TAIL / −X</span>

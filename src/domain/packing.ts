@@ -232,6 +232,8 @@ function serviceBoxForEnvelope(reservation: ServiceReservation, envelope: Box3D)
   center[faceAxis] = positive
     ? envelope.max[faceAxis] + reservation.sizeMm[faceAxis] / 2
     : envelope.min[faceAxis] - reservation.sizeMm[faceAxis] / 2;
+  const offset = reservation.offsetMm ?? [0, 0, 0];
+  for (let axis = 0; axis < 3; axis += 1) center[axis] += offset[axis];
   return boxFromCenterSize(center, reservation.sizeMm);
 }
 

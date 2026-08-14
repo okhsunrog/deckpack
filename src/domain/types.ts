@@ -89,6 +89,7 @@ export interface ServiceReservation {
   kind: "balance-harness" | "power-output";
   face: PackFace;
   sizeMm: Vec3;
+  offsetMm?: Vec3;
   enabled: boolean;
 }
 

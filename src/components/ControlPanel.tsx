@@ -209,6 +209,7 @@ export function ControlPanel({ config }: { config: PlannerConfig }) {
                   onChange={(event) =>
                     setService(reservation.id, {
                       face: event.currentTarget.value as typeof reservation.face,
+                      offsetMm: [0, 0, 0],
                     })
                   }
                 >
@@ -235,6 +236,17 @@ export function ControlPanel({ config }: { config: PlannerConfig }) {
                   />
                 ))}
               </div>
+              {(reservation.offsetMm ?? [0, 0, 0]).some((value) => Math.abs(value) > 0.05) && (
+                <div className="service-offset">
+                  <span>Смещение: {(reservation.offsetMm ?? [0, 0, 0]).join(" / ")} мм</span>
+                  <button
+                    type="button"
+                    onClick={() => setService(reservation.id, { offsetMm: [0, 0, 0] })}
+                  >
+                    к грани
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         ))}

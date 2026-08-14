@@ -461,6 +461,25 @@
   gap: 6px;
 }
 
+.service-offset {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 7px;
+  font:
+    400 6px/1 "JetBrains Mono",
+    monospace;
+  color: var(--text-faint);
+}
+
+.service-offset button {
+  padding: 2px 0;
+  border: 0;
+  font: inherit;
+  color: var(--cyan);
+  background: transparent;
+}
+
 .viewport-column {
   display: grid;
   grid-template-rows: 47px minmax(350px, 1fr) 82px;
@@ -655,6 +674,71 @@
 .scene-status.invalid > span {
   background: var(--danger);
   box-shadow: 0 0 8px var(--danger);
+}
+
+.keepout-editor {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid #34535a;
+  border-radius: 2px;
+  background: rgb(10 22 27 / 90%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 28%);
+  backdrop-filter: blur(8px);
+}
+
+.keepout-editor > div {
+  display: flex;
+  min-width: 125px;
+  padding: 7px 10px;
+  border-right: 1px solid #294148;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.keepout-editor span {
+  font:
+    500 6px/1 "JetBrains Mono",
+    monospace;
+  letter-spacing: 0.09em;
+  color: var(--cyan);
+}
+
+.keepout-editor b {
+  margin-top: 3px;
+  font-size: 8px;
+  color: var(--text);
+}
+
+.keepout-editor button {
+  min-width: 58px;
+  padding: 0 9px;
+  border: 0;
+  border-right: 1px solid #294148;
+  font:
+    500 7px/1 "IBM Plex Sans",
+    sans-serif;
+  color: var(--text-faint);
+  background: transparent;
+}
+
+.keepout-editor button:hover {
+  color: var(--text);
+  background: #15272d;
+}
+
+.keepout-editor button.active {
+  color: #102024;
+  background: var(--cyan);
+}
+
+.keepout-editor button.reset-position {
+  border-right: 0;
+  color: #85a0a8;
 }
 
 .metrics-bar {

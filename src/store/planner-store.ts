@@ -72,6 +72,7 @@ export const defaultConfig: PlannerConfig = {
         kind: "balance-harness",
         face: "positive-y",
         sizeMm: [60, 14, 12],
+        offsetMm: [0, 0, 0],
         enabled: true,
       },
       {
@@ -80,6 +81,7 @@ export const defaultConfig: PlannerConfig = {
         kind: "power-output",
         face: "positive-x",
         sizeMm: [45, 34, 18],
+        offsetMm: [0, 0, 0],
         enabled: true,
       },
     ],

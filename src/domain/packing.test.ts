@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { getCell } from "../data/library";
 import { defaultConfig } from "../store/planner-store";
-import { boxContainmentKernel } from "./geometry";
+import { boxCenter, boxContainmentKernel, boxSize } from "./geometry";
 import { enumeratePackPlans, factorTriples } from "./packing";
 
 describe("factorTriples", () => {
@@ -54,5 +54,26 @@ describe("enumeratePackPlans", () => {
         response.plans[index].metrics.score,
       );
     }
+  });
+
+  it("keeps a mouse-edited service offset relative to its pack face", () => {
+    const offsetConfig = structuredClone(defaultConfig);
+    const balance = offsetConfig.pack.serviceReservations.find(
+      (reservation) => reservation.id === "balance-harness",
+    )!;
+    balance.offsetMm = [8, 6, 2];
+    const plan = enumeratePackPlans({
+      config: offsetConfig,
+      cell: getCell(offsetConfig.pack.cellId),
+    }).plans[0];
+    const volume = plan.serviceVolumes.find((item) => item.id === balance.id)!;
+    const block = plan.blocks[0].envelope;
+    const center = boxCenter(volume.box);
+    const blockCenter = boxCenter(block);
+    const size = boxSize(volume.box);
+
+    expect(center[0] - blockCenter[0]).toBeCloseTo(8);
+    expect(center[1] - block.max[1] - size[1] / 2).toBeCloseTo(6);
+    expect(center[2] - blockCenter[2]).toBeCloseTo(2);
   });
 });
