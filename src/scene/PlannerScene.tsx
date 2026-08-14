@@ -17,6 +17,7 @@ import {
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { boxCenter, boxSize, componentBox } from "../domain/geometry";
 import type {
+  Box3D,
   ComponentPlacement,
   ComponentSpec,
   ComponentVisual,
@@ -357,6 +358,7 @@ function KeepOutShape({
 
 function EditableKeepOut({
   volume,
+  envelope,
   reservation,
   selected,
   tool,
@@ -364,6 +366,7 @@ function EditableKeepOut({
   onCommit,
 }: {
   volume: ServiceVolume;
+  envelope: Box3D;
   reservation: ServiceReservation;
   selected: boolean;
   tool: KeepOutTool;
@@ -373,6 +376,15 @@ function EditableKeepOut({
   const objectRef = useRef<Group>(null!);
   const size = boxSize(volume.box);
   const center = boxCenter(volume.box);
+  const envelopeCenter = boxCenter(envelope);
+  const envelopeSize = boxSize(envelope);
+  const normalAxis = reservation.face.endsWith("x") ? 0 : 1;
+  const tangentAxis = normalAxis === 0 ? 1 : 0;
+  const direction = reservation.face.startsWith("positive") ? 1 : -1;
+  const anchorPoint: Vec3 = [...center];
+  anchorPoint[normalAxis] -= (direction * size[normalAxis]) / 2;
+  const shapeOffset: Vec3 = [0, 0, 0];
+  shapeOffset[normalAxis] = (direction * size[normalAxis]) / 2;
 
   const commitTransform = () => {
     const object = objectRef.current;
@@ -380,29 +392,34 @@ function EditableKeepOut({
     const nextSize = size.map((value, axis) =>
       Math.max(1, Math.round(value * Math.abs(object.scale.getComponent(axis)) * 10) / 10),
     ) as Vec3;
-    const currentOffset = reservation.offsetMm ?? [0, 0, 0];
-    const baseCenter = center.map((value, axis) => value - currentOffset[axis]) as Vec3;
-    const faceAxis = reservation.face.endsWith("x") ? 0 : 1;
-    const direction = reservation.face.startsWith("positive") ? 1 : -1;
-    baseCenter[faceAxis] += (direction * (nextSize[faceAxis] - size[faceAxis])) / 2;
-    const nextOffset = baseCenter.map(
-      (value, axis) => Math.round((object.position.getComponent(axis) - value) * 10) / 10,
-    ) as Vec3;
+    const tangentLimit = Math.max(0, (envelopeSize[tangentAxis] - nextSize[tangentAxis]) / 2);
+    const tangentOffset = Math.max(
+      -tangentLimit,
+      Math.min(
+        tangentLimit,
+        Math.round((object.position.getComponent(tangentAxis) - envelopeCenter[tangentAxis]) * 10) /
+          10,
+      ),
+    );
+    const nextOffset: Vec3 = [0, 0, 0];
+    nextOffset[tangentAxis] = tangentOffset;
     object.scale.set(1, 1, 1);
     onCommit({ sizeMm: nextSize, offsetMm: nextOffset });
   };
 
   const shape = (
-    <group ref={objectRef} position={center}>
-      <KeepOutShape
-        size={size}
-        reservation={reservation}
-        selected={selected}
-        onPointerDown={(event) => {
-          event.stopPropagation();
-          onSelect();
-        }}
-      />
+    <group ref={objectRef} position={anchorPoint}>
+      <group position={shapeOffset}>
+        <KeepOutShape
+          size={size}
+          reservation={reservation}
+          selected={selected}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+            onSelect();
+          }}
+        />
+      </group>
     </group>
   );
 
@@ -412,7 +429,10 @@ function EditableKeepOut({
       object={objectRef}
       mode={tool}
       space="world"
-      size={0.72}
+      size={0.88}
+      showX={tool === "scale" || tangentAxis === 0}
+      showY={tool === "scale" || tangentAxis === 1}
+      showZ={tool === "scale"}
       translationSnap={1}
       scaleSnap={0.05}
       onMouseUp={commitTransform}
@@ -628,6 +648,7 @@ function SceneContents(props: SceneContentsProps) {
               <EditableKeepOut
                 key={volume.id}
                 volume={volume}
+                envelope={plan.blocks[0].envelope}
                 reservation={reservation}
                 selected={volume.id === props.selectedKeepOutId}
                 tool={props.keepOutTool}
@@ -694,7 +715,7 @@ function SceneContents(props: SceneContentsProps) {
 
 export function PlannerScene(props: PlannerSceneProps) {
   const [selectedKeepOutId, setSelectedKeepOutId] = useState<string>();
-  const [keepOutTool, setKeepOutTool] = useState<KeepOutTool>("translate");
+  const [keepOutTool, setKeepOutTool] = useState<KeepOutTool>("scale");
   const componentMenuRef = useRef<HTMLDivElement>(null);
   const [componentMenu, setComponentMenu] = useState<{
     id: string;
@@ -703,6 +724,15 @@ export function PlannerScene(props: PlannerSceneProps) {
   const selectedReservation = props.serviceReservations.find(
     (reservation) => reservation.id === selectedKeepOutId && reservation.enabled,
   );
+  const selectedEdgeAxis = selectedReservation?.face.endsWith("x") ? "Y" : "X";
+  const selectedFaceLabel = selectedReservation
+    ? {
+        "positive-x": "+X · НОС",
+        "negative-x": "−X · ХВОСТ",
+        "positive-y": "+Y · БОРТ",
+        "negative-y": "−Y · БОРТ",
+      }[selectedReservation.face]
+    : "";
   const menuComponent = componentMenu
     ? props.components.find((component) => component.id === componentMenu.id)
     : undefined;
@@ -746,7 +776,10 @@ export function PlannerScene(props: PlannerSceneProps) {
           {...props}
           selectedKeepOutId={selectedKeepOutId}
           keepOutTool={keepOutTool}
-          onSelectKeepOut={setSelectedKeepOutId}
+          onSelectKeepOut={(id) => {
+            setSelectedKeepOutId(id);
+            if (id) setKeepOutTool("scale");
+          }}
           onOpenComponentMenu={(id, position) => setComponentMenu({ id, position })}
           onCloseComponentMenu={() => setComponentMenu(undefined)}
         />
@@ -778,33 +811,48 @@ export function PlannerScene(props: PlannerSceneProps) {
       )}
       {selectedReservation && (
         <div className="keepout-editor" role="toolbar" aria-label="Редактирование keep-out">
-          <div>
-            <span>KEEP-OUT</span>
+          <div className="keepout-editor-identity">
+            <span>ПРИВЯЗАНО · {selectedFaceLabel}</span>
             <b>{selectedReservation.label}</b>
+            <small>Сдвиг только вдоль {selectedEdgeAxis} · размер по X / Y / Z</small>
           </div>
-          <button
-            type="button"
-            aria-pressed={keepOutTool === "translate"}
-            className={keepOutTool === "translate" ? "active" : ""}
-            onClick={() => setKeepOutTool("translate")}
-          >
-            Двигать
-          </button>
-          <button
-            type="button"
-            aria-pressed={keepOutTool === "scale"}
-            className={keepOutTool === "scale" ? "active" : ""}
-            onClick={() => setKeepOutTool("scale")}
-          >
-            Размер
-          </button>
-          <button
-            type="button"
-            className="reset-position"
-            onClick={() => props.onUpdateService(selectedReservation.id, { offsetMm: [0, 0, 0] })}
-          >
-            К грани
-          </button>
+          <div className="keepout-editor-tools">
+            <button
+              type="button"
+              aria-pressed={keepOutTool === "scale"}
+              className={keepOutTool === "scale" ? "active" : ""}
+              onClick={() => setKeepOutTool("scale")}
+            >
+              <i aria-hidden="true">↗</i>
+              <span>
+                Размер
+                <small>ручки X / Y / Z</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              aria-pressed={keepOutTool === "translate"}
+              className={keepOutTool === "translate" ? "active" : ""}
+              onClick={() => setKeepOutTool("translate")}
+            >
+              <i aria-hidden="true">↔</i>
+              <span>
+                Сдвиг
+                <small>только вдоль {selectedEdgeAxis}</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="reset-position"
+              onClick={() => props.onUpdateService(selectedReservation.id, { offsetMm: [0, 0, 0] })}
+            >
+              <i aria-hidden="true">⌖</i>
+              <span>
+                По центру
+                <small>сбросить сдвиг</small>
+              </span>
+            </button>
+          </div>
         </div>
       )}
     </>

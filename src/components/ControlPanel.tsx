@@ -115,11 +115,16 @@ export function ControlPanel({ config }: { config: PlannerConfig }) {
           />
         ))}
       </div>
-      {(reservation.offsetMm ?? [0, 0, 0]).some((value) => Math.abs(value) > 0.05) && (
+      {Math.abs((reservation.offsetMm ?? [0, 0, 0])[reservation.face.endsWith("x") ? 1 : 0]) >
+        0.05 && (
         <div className="service-offset">
-          <span>Смещение: {(reservation.offsetMm ?? [0, 0, 0]).join(" / ")} мм</span>
+          <span>
+            Вдоль грани:{" "}
+            {(reservation.offsetMm ?? [0, 0, 0])[reservation.face.endsWith("x") ? 1 : 0].toFixed(1)}{" "}
+            мм
+          </span>
           <button type="button" onClick={() => setService(reservation.id, { offsetMm: [0, 0, 0] })}>
-            к грани
+            по центру
           </button>
         </div>
       )}

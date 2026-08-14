@@ -59,7 +59,7 @@ describe("enumeratePackPlans", () => {
     }
   });
 
-  it("keeps a mouse-edited service offset relative to its pack face", () => {
+  it("keeps a service volume attached to its pack face and only slides it along the edge", () => {
     const offsetConfig = structuredClone(defaultConfig);
     const wiringExit = offsetConfig.pack.serviceReservations.find(
       (reservation) => reservation.kind === "wiring-exit",
@@ -77,8 +77,30 @@ describe("enumeratePackPlans", () => {
     const size = boxSize(volume.box);
 
     expect(center[0] - blockCenter[0]).toBeCloseTo(8);
-    expect(center[1] - block.max[1] - size[1] / 2).toBeCloseTo(6);
-    expect(center[2] - blockCenter[2]).toBeCloseTo(2);
+    expect(center[1] - block.max[1] - size[1] / 2).toBeCloseTo(0);
+    expect(center[2] - blockCenter[2]).toBeCloseTo(0);
+  });
+
+  it("clamps service volume travel to the length of the selected edge", () => {
+    const offsetConfig = structuredClone(defaultConfig);
+    const wiringExit = offsetConfig.pack.serviceReservations.find(
+      (reservation) => reservation.kind === "wiring-exit",
+    )!;
+    wiringExit.face = "negative-x";
+    wiringExit.offsetMm = [50, 10_000, -40];
+    const plan = enumeratePackPlans({
+      config: offsetConfig,
+      cell: getCell(offsetConfig.pack.cellId),
+    }).plans[0];
+    const volume = plan.serviceVolumes.find((item) => item.id === wiringExit.id)!;
+    const block = plan.blocks[0].envelope;
+    const center = boxCenter(volume.box);
+    const blockCenter = boxCenter(block);
+    const size = boxSize(volume.box);
+
+    expect(center[0] - block.min[0] + size[0] / 2).toBeCloseTo(0);
+    expect(volume.box.max[1]).toBeCloseTo(block.max[1]);
+    expect(center[2] - blockCenter[2]).toBeCloseTo(0);
   });
 
   it("starts advanced separate exits beside each other instead of overlapping", () => {

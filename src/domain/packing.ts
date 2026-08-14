@@ -229,12 +229,15 @@ function serviceBoxForEnvelope(reservation: ServiceReservation, envelope: Box3D)
   ];
   const center: Vec3 = [...envelopeCenter];
   const faceAxis = reservation.face.endsWith("x") ? 0 : 1;
+  const tangentAxis = faceAxis === 0 ? 1 : 0;
   const positive = reservation.face.startsWith("positive");
   center[faceAxis] = positive
     ? envelope.max[faceAxis] + reservation.sizeMm[faceAxis] / 2
     : envelope.min[faceAxis] - reservation.sizeMm[faceAxis] / 2;
   const offset = reservation.offsetMm ?? [0, 0, 0];
-  for (let axis = 0; axis < 3; axis += 1) center[axis] += offset[axis];
+  const faceLength = envelope.max[tangentAxis] - envelope.min[tangentAxis];
+  const tangentLimit = Math.max(0, (faceLength - reservation.sizeMm[tangentAxis]) / 2);
+  center[tangentAxis] += Math.max(-tangentLimit, Math.min(tangentLimit, offset[tangentAxis]));
   return boxFromCenterSize(center, reservation.sizeMm);
 }
 
