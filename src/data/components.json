@@ -53,6 +53,21 @@
       }
     },
     {
+      "id": "flipsky-mini-v6-mk5",
+      "manufacturer": "Flipsky",
+      "model": "Mini V6 MK5",
+      "category": "esc",
+      "dimensionsMm": { "length": 67, "width": 39, "height": 18.7 },
+      "color": "#6aa38b",
+      "visual": { "kind": "procedural", "style": "finned-case" },
+      "source": {
+        "url": "https://flipskycn.en.made-in-china.com/product/CYQpxumWvhVv/China-Flipsky-Mini-V6-Mk5-Electronic-Speed-Controller-with-Power-Button.html",
+        "label": "FLIPSKY Mini V6 MK5",
+        "checkedAt": "2026-08-14",
+        "dimensionBasis": "Manufacturer spec 67x39x18.7 mm including aluminium heatsink; cables and remote power button excluded"
+      }
+    },
+    {
       "id": "makerx-dv6s",
       "manufacturer": "MakerX",
       "model": "Go-FOC DV6S",
