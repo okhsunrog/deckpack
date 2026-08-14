@@ -2,7 +2,6 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
   createDefaultServiceReservations,
-  normalizeWiringReservations,
   setWiringExitMode as updateWiringExitMode,
 } from "../domain/service-reservations";
 import type {
@@ -95,8 +94,6 @@ interface PlannerState {
   removeComponent: (id: string) => void;
   resetProject: () => void;
 }
-
-type PersistedPlannerState = Pick<PlannerState, "config" | "placements" | "selectedPlanId">;
 
 function freshConfig(): PlannerConfig {
   return structuredClone(defaultConfig);
@@ -204,16 +201,6 @@ export const usePlannerStore = create<PlannerState>()(
     {
       name: "deckpack-project-v1",
       version: 2,
-      migrate: (persistedState) => {
-        const state = persistedState as PersistedPlannerState;
-        return {
-          ...state,
-          config: {
-            ...state.config,
-            pack: normalizeWiringReservations(state.config.pack),
-          },
-        };
-      },
       partialize: (state) => ({
         config: state.config,
         placements: state.placements,

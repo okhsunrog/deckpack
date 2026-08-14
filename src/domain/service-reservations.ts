@@ -36,55 +36,6 @@ export function createDefaultServiceReservations(): ServiceReservation[] {
   ];
 }
 
-function sameVector(left?: Vec3, right?: Vec3): boolean {
-  return (left ?? [0, 0, 0]).every(
-    (value, axis) => Math.abs(value - (right ?? [0, 0, 0])[axis]) < 0.05,
-  );
-}
-
-function combinedFromLegacy(reservations: ServiceReservation[]): ServiceReservation {
-  const defaults = createDefaultServiceReservations()[0];
-  const legacy = reservations.filter((reservation) => reservation.kind !== "wiring-exit");
-  if (legacy.length === 0) return defaults;
-  const sharedFace = legacy.every((reservation) => reservation.face === legacy[0].face);
-  const sharedOffset = legacy.every((reservation) =>
-    sameVector(reservation.offsetMm, legacy[0].offsetMm),
-  );
-  return {
-    ...defaults,
-    face: sharedFace ? legacy[0].face : defaults.face,
-    sizeMm: [0, 1, 2].map((axis) =>
-      Math.max(...legacy.map((reservation) => reservation.sizeMm[axis])),
-    ) as Vec3,
-    offsetMm: sharedOffset ? [...(legacy[0].offsetMm ?? [0, 0, 0])] : [0, 0, 0],
-    enabled: legacy.some((reservation) => reservation.enabled),
-  };
-}
-
-type PossiblyLegacyPack = Omit<PackRequest, "wiringExitMode"> & {
-  wiringExitMode?: WiringExitMode;
-};
-
-export function normalizeWiringReservations(pack: PossiblyLegacyPack): PackRequest {
-  const defaults = createDefaultServiceReservations();
-  const reservations = pack.serviceReservations ?? [];
-  const combined =
-    reservations.find((reservation) => reservation.kind === "wiring-exit") ??
-    combinedFromLegacy(reservations);
-  const power =
-    reservations.find((reservation) => reservation.kind === "power-output") ?? defaults[1];
-  const balance =
-    reservations.find((reservation) => reservation.kind === "balance-harness") ?? defaults[2];
-  const legacySharesExit =
-    power.face === balance.face && sameVector(power.offsetMm, balance.offsetMm);
-
-  return {
-    ...pack,
-    wiringExitMode: pack.wiringExitMode ?? (legacySharesExit ? "combined" : "separate"),
-    serviceReservations: [combined, power, balance],
-  };
-}
-
 export function activeServiceReservations(pack: PackRequest): ServiceReservation[] {
   return pack.serviceReservations.filter((reservation) =>
     pack.wiringExitMode === "combined"
