@@ -26,6 +26,7 @@ const componentVisualSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("top-texture"),
     assetUrl: z.string(),
+    bottomAssetUrl: z.string().optional(),
     insetMm: z.number().nonnegative().optional(),
     source: visualAssetSourceSchema,
   }),

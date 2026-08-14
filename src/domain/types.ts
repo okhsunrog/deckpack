@@ -39,6 +39,8 @@ export type ComponentVisual =
   | {
       kind: "top-texture";
       assetUrl: string;
+      /** Optional photo for the underside (e.g. a bottom-mounted heatsink). */
+      bottomAssetUrl?: string;
       insetMm?: number;
       source: VisualAssetSource;
     }

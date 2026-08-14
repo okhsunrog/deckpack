@@ -105,16 +105,20 @@ function PlainCase({ dimensions, color }: ComponentVisualProps) {
   );
 }
 
-function TopTextureCase({
-  dimensions,
-  color,
-  visual,
-}: ComponentVisualProps & {
-  visual: Extract<ComponentVisual, { kind: "top-texture" }>;
+function FaceTexturePlane({
+  assetUrl,
+  sizeX,
+  sizeY,
+  z,
+  facing,
+}: {
+  assetUrl: string;
+  sizeX: number;
+  sizeY: number;
+  z: number;
+  facing: "up" | "down";
 }) {
-  const texture = useLoader(TextureLoader, visual.assetUrl);
-  const { length, width, height } = dimensions;
-  const inset = Math.min(visual.insetMm ?? 1, length / 4, width / 4);
+  const texture = useLoader(TextureLoader, assetUrl);
 
   useLayoutEffect(() => {
     texture.colorSpace = SRGBColorSpace;
@@ -123,12 +127,44 @@ function TopTextureCase({
   }, [texture]);
 
   return (
+    <mesh position={[0, 0, z]} rotation={[facing === "down" ? Math.PI : 0, 0, 0]}>
+      <planeGeometry args={[sizeX, sizeY]} />
+      <meshStandardMaterial map={texture} transparent roughness={0.5} metalness={0.05} />
+    </mesh>
+  );
+}
+
+function TopTextureCase({
+  dimensions,
+  color,
+  visual,
+}: ComponentVisualProps & {
+  visual: Extract<ComponentVisual, { kind: "top-texture" }>;
+}) {
+  const { length, width, height } = dimensions;
+  const inset = Math.min(visual.insetMm ?? 1, length / 4, width / 4);
+  const faceX = length - inset * 2;
+  const faceY = width - inset * 2;
+
+  return (
     <group>
       <PlainCase dimensions={dimensions} color={color} />
-      <mesh position={[0, 0, height / 2 + 0.08]}>
-        <planeGeometry args={[length - inset * 2, width - inset * 2]} />
-        <meshStandardMaterial map={texture} transparent roughness={0.5} metalness={0.05} />
-      </mesh>
+      <FaceTexturePlane
+        assetUrl={visual.assetUrl}
+        sizeX={faceX}
+        sizeY={faceY}
+        z={height / 2 + 0.08}
+        facing="up"
+      />
+      {visual.bottomAssetUrl && (
+        <FaceTexturePlane
+          assetUrl={visual.bottomAssetUrl}
+          sizeX={faceX}
+          sizeY={faceY}
+          z={-height / 2 - 0.08}
+          facing="down"
+        />
+      )}
     </group>
   );
 }

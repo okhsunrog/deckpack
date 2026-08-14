@@ -18,3 +18,11 @@ whose source and license are also recorded in `src/data/components.json`.
 - Source: <https://github.com/vedderb/vesc_tool/blob/master/res/images/v6plus_top.png>
 - License: [GNU General Public License 3.0 or later](public/licenses/GPL-3.0.txt)
 - Changes: filename normalized; displayed on a parameterized controller body
+
+## FLIPSKY Mini V6 MK5 board and heatsink textures
+
+- Files: `public/textures/flipsky-mini-v6-mk5-top.png`, `public/textures/flipsky-mini-v6-mk5-bottom.png`
+- Creator: Flipsky (official product photos)
+- Source: <https://www.amazon.com/FLIPSKY-Button-VESC6-6-Aluminum-Anodized/dp/B0CP5G19DL>
+- License: manufacturer product imagery, used informally for private planning visuals
+- Changes: cropped to the board outline, rotated to the component axis

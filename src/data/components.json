@@ -58,8 +58,19 @@
       "model": "Mini V6 MK5",
       "category": "esc",
       "dimensionsMm": { "length": 67, "width": 39, "height": 18.7 },
-      "color": "#6aa38b",
-      "visual": { "kind": "procedural", "style": "finned-case" },
+      "color": "#1d2326",
+      "visual": {
+        "kind": "top-texture",
+        "assetUrl": "/textures/flipsky-mini-v6-mk5-top.png",
+        "bottomAssetUrl": "/textures/flipsky-mini-v6-mk5-bottom.png",
+        "insetMm": 0.5,
+        "source": {
+          "url": "https://www.amazon.com/FLIPSKY-Button-VESC6-6-Aluminum-Anodized/dp/B0CP5G19DL",
+          "creator": "Flipsky (official product photos)",
+          "license": "Product imagery, informational use",
+          "licenseUrl": "https://flipsky.net/collections/v6-series"
+        }
+      },
       "source": {
         "url": "https://flipskycn.en.made-in-china.com/product/CYQpxumWvhVv/China-Flipsky-Mini-V6-Mk5-Electronic-Speed-Controller-with-Power-Button.html",
         "label": "FLIPSKY Mini V6 MK5",
