@@ -145,8 +145,19 @@
       "model": "SP14S004",
       "category": "bms",
       "dimensionsMm": { "length": 63, "width": 52, "height": 12 },
-      "color": "#39657a",
-      "visual": { "kind": "procedural", "style": "pcb" },
+      "color": "#2c5947",
+      "visual": {
+        "kind": "top-texture",
+        "assetUrl": "/textures/jbd-sp14s004-top.png",
+        "bottomAssetUrl": "/textures/jbd-sp14s004-bottom.png",
+        "insetMm": 0.5,
+        "source": {
+          "url": "https://www.jbdbms.com/products/sp14s004-2093589136",
+          "creator": "JBD / Jiabaida (product photos)",
+          "license": "Product imagery, informational use",
+          "licenseUrl": "https://www.jbdbms.com/products/sp14s004-2093589136"
+        }
+      },
       "source": {
         "url": "https://www.jbdbms.com/products/sp14s004-2093589136",
         "label": "JBD SP14S004 smart BMS (7-14S)",

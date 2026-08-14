@@ -26,3 +26,11 @@ whose source and license are also recorded in `src/data/components.json`.
 - Source: <https://www.amazon.com/FLIPSKY-Button-VESC6-6-Aluminum-Anodized/dp/B0CP5G19DL>
 - License: manufacturer product imagery, used informally for private planning visuals
 - Changes: cropped to the board outline, rotated to the component axis
+
+## JBD SP14S004 board and label textures
+
+- Files: `public/textures/jbd-sp14s004-top.png`, `public/textures/jbd-sp14s004-bottom.png`
+- Creator: JBD / Jiabaida (product photos)
+- Source: <https://www.jbdbms.com/products/sp14s004-2093589136>
+- License: manufacturer product imagery, used informally for private planning visuals
+- Changes: cropped to the board outline, rotated to the component axis
