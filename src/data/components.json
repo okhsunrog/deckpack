@@ -140,6 +140,21 @@
       }
     },
     {
+      "id": "jbd-sp14s004",
+      "manufacturer": "JBD (Jiabaida)",
+      "model": "SP14S004",
+      "category": "bms",
+      "dimensionsMm": { "length": 63, "width": 52, "height": 12 },
+      "color": "#39657a",
+      "visual": { "kind": "procedural", "style": "pcb" },
+      "source": {
+        "url": "https://www.jbdbms.com/products/sp14s004-2093589136",
+        "label": "JBD SP14S004 smart BMS (7-14S)",
+        "checkedAt": "2026-08-14",
+        "dimensionBasis": "Board 63x52 mm per manufacturer spec (63±0.5 × 52±0.5 × 14±2); 12 mm is the measured height of the owned current variant; wiring harness excluded"
+      }
+    },
+    {
       "id": "generic-bms",
       "manufacturer": "Custom",
       "model": "BMS block",
