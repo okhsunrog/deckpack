@@ -1,0 +1,101 @@
+@import "@fontsource/barlow-condensed/600.css";
+@import "@fontsource/barlow-condensed/700.css";
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/600.css";
+
+:root {
+  --ink-950: #081117;
+  --ink-925: #0b141a;
+  --ink-900: #0e1920;
+  --ink-850: #122029;
+  --ink-800: #172832;
+  --ink-700: #263b46;
+  --line: #29404b;
+  --line-soft: #1c3039;
+  --text: #d9e1e4;
+  --text-dim: #82949d;
+  --text-faint: #546b76;
+  --fishpaper: #d99a46;
+  --fishpaper-pale: #f5c36b;
+  --nickel: #aab7bd;
+  --copper: #ed7547;
+  --cyan: #54a6b1;
+  --danger: #ff5b64;
+  --success: #73a282;
+  font-family: "IBM Plex Sans", sans-serif;
+  color: var(--text);
+  background: var(--ink-950);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 1180px;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  color: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--fishpaper-pale);
+  outline-offset: 2px;
+}
+
+button,
+select,
+input[type="checkbox"] {
+  cursor: pointer;
+}
+
+::selection {
+  color: var(--ink-950);
+  background: var(--fishpaper-pale);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--ink-900);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--ink-700);
+  border: 2px solid var(--ink-900);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

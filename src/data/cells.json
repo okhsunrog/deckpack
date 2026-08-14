@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "cells": [
+    {
+      "id": "eve-50pl",
+      "manufacturer": "EVE Energy",
+      "model": "INR21700/50PL",
+      "formFactor": "21700",
+      "chemistry": "NCM",
+      "sleevedDiameterMm": 21.25,
+      "sleevedHeightMm": 70.3,
+      "bareDiameterMm": 21.0,
+      "bareHeightMm": 70.04,
+      "massG": 72,
+      "nominalVoltageV": 3.6,
+      "capacityAh": 5.0,
+      "source": {
+        "url": "https://www.evemall.eu/consumer-battery/cylindrical-ncm-cell/21700-50pl",
+        "label": "EVE 21700/50PL specifications",
+        "checkedAt": "2026-08-14",
+        "dimensionBasis": "Maximum dimensions with tube: nominal plus positive tolerance"
+      }
+    },
+    {
+      "id": "molicel-p42a",
+      "manufacturer": "Molicel",
+      "model": "INR-21700-P42A",
+      "formFactor": "21700",
+      "chemistry": "NCA",
+      "sleevedDiameterMm": 21.7,
+      "sleevedHeightMm": 70.2,
+      "massG": 70,
+      "nominalVoltageV": 3.6,
+      "capacityAh": 4.2,
+      "source": {
+        "url": "https://www.molicel.com/product/inr-21700-p42a/",
+        "label": "Molicel P42A product data",
+        "checkedAt": "2026-08-14",
+        "dimensionBasis": "Manufacturer maximum finished-cell dimensions"
+      }
+    },
+    {
+      "id": "molicel-p45b",
+      "manufacturer": "Molicel",
+      "model": "INR-21700-P45B",
+      "formFactor": "21700",
+      "chemistry": "NCA",
+      "sleevedDiameterMm": 21.6,
+      "sleevedHeightMm": 70.2,
+      "massG": 69,
+      "nominalVoltageV": 3.6,
+      "capacityAh": 4.5,
+      "source": {
+        "url": "https://www.molicel.com/product/inr-21700-p45b/",
+        "label": "Molicel P45B product data",
+        "checkedAt": "2026-08-14",
+        "dimensionBasis": "Manufacturer maximum finished-cell dimensions"
+      }
+    }
+  ]
+}

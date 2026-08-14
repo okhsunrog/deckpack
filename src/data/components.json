@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "components": [
+    {
+      "id": "trampa-vesc-6-mkvi",
+      "manufacturer": "TRAMPA",
+      "model": "VESC 6 MkVI",
+      "category": "esc",
+      "dimensionsMm": { "length": 75, "width": 70, "height": 18 },
+      "massG": 232,
+      "color": "#b98138",
+      "visual": {
+        "kind": "top-texture",
+        "assetUrl": "/textures/vesc6-plus-top.png",
+        "insetMm": 1.5,
+        "source": {
+          "url": "https://github.com/vedderb/vesc_tool/blob/master/res/images/v6plus_top.png",
+          "creator": "Benjamin Vedder / VESC Project",
+          "license": "GPL-3.0-or-later",
+          "licenseUrl": "https://github.com/vedderb/vesc_tool/blob/master/LICENSE"
+        }
+      },
+      "source": {
+        "url": "https://trampaboards.com/vesc-6-mkiii-in-cnc-t6-silicone-sealed-aluminium-box-with-genuine-xt90-connectors--vedder-electronic-speed-controller-trampa-special-p-27536.html?download=224",
+        "label": "TRAMPA VESC 6 MkVI",
+        "checkedAt": "2026-08-14",
+        "dimensionBasis": "CNC aluminium box; cable bend space not included"
+      }
+    },
+    {
+      "id": "flipsky-75100-alu",
+      "manufacturer": "Flipsky",
+      "model": "75100 Aluminium PCB",
+      "category": "esc",
+      "dimensionsMm": { "length": 103, "width": 58, "height": 24.25 },
+      "color": "#4f83a6",
+      "visual": {
+        "kind": "stl",
+        "assetUrl": "/models/flipsky-75100-alu.stl",
+        "rotationDeg": [0, 0, -90],
+        "source": {
+          "url": "https://www.thingiverse.com/thing:6100137",
+          "creator": "billwurles",
+          "license": "CC BY-SA 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/"
+        }
+      },
+      "source": {
+        "url": "https://www.thingiverse.com/thing:6100137",
+        "label": "Flipsky 75100 VESC mockup",
+        "checkedAt": "2026-08-14",
+        "dimensionBasis": "Bounding box measured from the dimensionally representative STL; cables excluded"
+      }
+    },
+    {
+      "id": "makerx-dv6s",
+      "manufacturer": "MakerX",
+      "model": "Go-FOC DV6S",
+      "category": "esc",
+      "dimensionsMm": { "length": 96, "width": 60, "height": 20 },
+      "color": "#a9b3ba",
+      "visual": { "kind": "procedural", "style": "finned-case" },
+      "source": {
+        "url": "https://www.makerx-tech.com/products/go-foc-dv6",
+        "label": "MakerX Go-FOC DV6S",
+        "checkedAt": "2026-08-14",
+        "dimensionBasis": "Aluminium shell; cables and switch excluded"
+      }
+    },
+    {
+      "id": "makerx-d100s",
+      "manufacturer": "MakerX",
+      "model": "Go-FOC D100S",
+      "category": "esc",
+      "dimensionsMm": { "length": 101, "width": 65, "height": 20 },
+      "color": "#9aa6ad",
+      "visual": { "kind": "procedural", "style": "finned-case" },
+      "source": {
+        "url": "https://www.makerx-tech.com/products/go-foc-d100s",
+        "label": "MakerX Go-FOC D100S",
+        "checkedAt": "2026-08-14",
+        "dimensionBasis": "Aluminium shell; cables and switch excluded"
+      }
+    },
+    {
+      "id": "flipsky-dual-75100",
+      "manufacturer": "Flipsky",
+      "model": "Dual 75100 Alu PCB",
+      "category": "esc",
+      "dimensionsMm": { "length": 107, "width": 103, "height": 18.5 },
+      "color": "#5c93a0",
+      "visual": { "kind": "procedural", "style": "pcb" },
+      "source": {
+        "url": "https://flipsky.net/products/flipsky-dual-75100-with-aluminum-pcb-based-on-vesc-for-electric-skateboard-electric-scooter-ebike-speed-controller",
+        "label": "Flipsky Dual 75100",
+        "checkedAt": "2026-08-14",
+        "dimensionBasis": "Aluminium PCB assembly; cable exits excluded"
+      }
+    },
+    {
+      "id": "spintend-ubox-v21",
+      "manufacturer": "Spintend",
+      "model": "Ubox V2.1 75V",
+      "category": "esc",
+      "dimensionsMm": { "length": 129, "width": 83, "height": 27 },
+      "massG": 396,
+      "color": "#765e9e",
+      "visual": { "kind": "procedural", "style": "sealed-case" },
+      "source": {
+        "url": "https://spintend.com/collections/frontpage/products/ubox-v2-1-75v-200a-dual-motor-controller-based-on-vesc",
+        "label": "Spintend Ubox V2.1",
+        "checkedAt": "2026-08-14",
+        "dimensionBasis": "Aluminium case including screws; cables excluded"
+      }
+    },
+    {
+      "id": "generic-bms",
+      "manufacturer": "Custom",
+      "model": "BMS block",
+      "category": "bms",
+      "dimensionsMm": { "length": 120, "width": 65, "height": 15 },
+      "color": "#567c65",
+      "visual": { "kind": "procedural", "style": "pcb" }
+    },
+    {
+      "id": "generic-antispark",
+      "manufacturer": "Custom",
+      "model": "Antispark block",
+      "category": "antispark",
+      "dimensionsMm": { "length": 60, "width": 35, "height": 15 },
+      "color": "#9c715b",
+      "visual": { "kind": "procedural", "style": "sealed-case" }
+    },
+    {
+      "id": "custom-block",
+      "manufacturer": "Custom",
+      "model": "Dimensioned block",
+      "category": "custom",
+      "dimensionsMm": { "length": 80, "width": 40, "height": 15 },
+      "color": "#708089"
+    }
+  ]
+}
