@@ -26,7 +26,7 @@ export const DEFAULT_HOLDER_OPTIONS: HolderOptions = {
   sampleStepMm: 0.25,
 };
 
-interface ProfilePiece {
+export interface ProfilePiece {
   label: string;
   /** Sampled lateral coordinates. */
   t: number[];
@@ -34,6 +34,14 @@ interface ProfilePiece {
   bottom: number[];
   /** Extrusion length along the cell axis. */
   lengthMm: number;
+  /** Axial center of the cell row this piece belongs to. */
+  axialCenterMm: number;
+}
+
+export interface HolderPieces {
+  pieces: ProfilePiece[];
+  axialIndex: 0 | 1;
+  lateralIndex: 0 | 1;
 }
 
 function sumTolerance(stack: ToleranceLayer[], application: ToleranceLayer["application"]): number {
@@ -87,12 +95,12 @@ export interface HolderBuild {
   stl: ArrayBuffer;
 }
 
-export function generateHolder(
+export function computeHolderPieces(
   plan: PackPlan,
   cell: CellSpec,
   toleranceStack: ToleranceLayer[],
   options: HolderOptions = DEFAULT_HOLDER_OPTIONS,
-): HolderBuild {
+): HolderPieces {
   if (plan.orientation === "z") {
     throw new Error("Holder generation supports horizontal cells only");
   }
@@ -142,6 +150,7 @@ export function generateHolder(
         options.sampleStepMm,
       ),
       lengthMm: stripLength,
+      axialCenterMm: rowCenter,
     });
 
     // Interlayer spacers between each pair of adjacent layers.
@@ -161,11 +170,90 @@ export function generateHolder(
           options.sampleStepMm,
         ),
         lengthMm: stripLength,
+        axialCenterMm: rowCenter,
       });
     }
   }
 
-  return buildStl(pieces, options);
+  return { pieces, axialIndex, lateralIndex };
+}
+
+export function generateHolder(
+  plan: PackPlan,
+  cell: CellSpec,
+  toleranceStack: ToleranceLayer[],
+  options: HolderOptions = DEFAULT_HOLDER_OPTIONS,
+): HolderBuild {
+  return buildStl(computeHolderPieces(plan, cell, toleranceStack, options).pieces, options);
+}
+
+/**
+ * Triangles of a piece in its assembled position inside the enclosure, as a
+ * flat position array for a three.js BufferGeometry.
+ */
+export function assembledPieceTriangles(piece: ProfilePiece, layout: HolderPieces): number[] {
+  const positions: number[] = [];
+  const axialStart = piece.axialCenterMm - piece.lengthMm / 2;
+  const map = (t: number, z: number, s: number): Vec3 => {
+    const point: Vec3 = [0, 0, 0];
+    point[layout.lateralIndex] = t;
+    point[layout.axialIndex] = axialStart + s;
+    point[2] = z;
+    return point;
+  };
+  emitPieceTriangles(piece, map, (a, b, c) => positions.push(...a, ...b, ...c));
+  return positions;
+}
+
+/** Shared prism topology: caps, wave surfaces, and end walls of one piece. */
+function emitPieceTriangles(
+  piece: ProfilePiece,
+  map: (t: number, z: number, s: number) => Vec3,
+  emit: (a: Vec3, b: Vec3, c: Vec3) => void,
+): void {
+  const n = piece.t.length;
+  const L = piece.lengthMm;
+  for (let i = 0; i + 1 < n; i += 1) {
+    const b0 = map(piece.t[i], piece.bottom[i], 0);
+    const b1 = map(piece.t[i + 1], piece.bottom[i + 1], 0);
+    const u0 = map(piece.t[i], piece.top[i], 0);
+    const u1 = map(piece.t[i + 1], piece.top[i + 1], 0);
+    const B0 = map(piece.t[i], piece.bottom[i], L);
+    const B1 = map(piece.t[i + 1], piece.bottom[i + 1], L);
+    const U0 = map(piece.t[i], piece.top[i], L);
+    const U1 = map(piece.t[i + 1], piece.top[i + 1], L);
+    // front cap and back cap
+    emit(b0, u0, b1);
+    emit(b1, u0, u1);
+    emit(B0, B1, U0);
+    emit(B1, U1, U0);
+    // top wave and bottom surfaces
+    emit(u0, U0, u1);
+    emit(u1, U0, U1);
+    emit(b0, b1, B0);
+    emit(b1, B1, B0);
+  }
+  const last = n - 1;
+  emit(
+    map(piece.t[0], piece.bottom[0], 0),
+    map(piece.t[0], piece.bottom[0], L),
+    map(piece.t[0], piece.top[0], 0),
+  );
+  emit(
+    map(piece.t[0], piece.top[0], 0),
+    map(piece.t[0], piece.bottom[0], L),
+    map(piece.t[0], piece.top[0], L),
+  );
+  emit(
+    map(piece.t[last], piece.bottom[last], 0),
+    map(piece.t[last], piece.top[last], 0),
+    map(piece.t[last], piece.bottom[last], L),
+  );
+  emit(
+    map(piece.t[last], piece.top[last], 0),
+    map(piece.t[last], piece.top[last], L),
+    map(piece.t[last], piece.bottom[last], L),
+  );
 }
 
 function buildStl(pieces: ProfilePiece[], options: HolderOptions): HolderBuild {
@@ -195,40 +283,14 @@ function buildStl(pieces: ProfilePiece[], options: HolderOptions): HolderBuild {
     const before = triangles.length;
     const t0 = piece.t[0];
     const zBase = Math.min(...piece.bottom);
-    const X = (i: number) => offsetX + piece.t[i] - t0;
-    const yTop = (i: number) => piece.top[i] - zBase;
-    const yBot = (i: number) => piece.bottom[i] - zBase;
-    const L = piece.lengthMm;
-    const n = piece.t.length;
+    const startX = offsetX;
+    const last = piece.t.length - 1;
     let minWall = Infinity;
-    for (let i = 0; i < n; i += 1) minWall = Math.min(minWall, piece.top[i] - piece.bottom[i]);
-
-    for (let i = 0; i + 1 < n; i += 1) {
-      const b0: Vec3 = [X(i), yBot(i), 0];
-      const b1: Vec3 = [X(i + 1), yBot(i + 1), 0];
-      const u0: Vec3 = [X(i), yTop(i), 0];
-      const u1: Vec3 = [X(i + 1), yTop(i + 1), 0];
-      const B0: Vec3 = [X(i), yBot(i), L];
-      const B1: Vec3 = [X(i + 1), yBot(i + 1), L];
-      const U0: Vec3 = [X(i), yTop(i), L];
-      const U1: Vec3 = [X(i + 1), yTop(i + 1), L];
-      // front cap (z=0, normal -z) and back cap (z=L, normal +z)
-      push(b0, u0, b1);
-      push(b1, u0, u1);
-      push(B0, B1, U0);
-      push(B1, U1, U0);
-      // top wave and bottom surfaces
-      push(u0, U0, u1);
-      push(u1, U0, U1);
-      push(b0, b1, B0);
-      push(b1, B1, B0);
+    for (let i = 0; i <= last; i += 1) {
+      minWall = Math.min(minWall, piece.top[i] - piece.bottom[i]);
     }
-    // end walls at tMin/tMax
-    const last = n - 1;
-    push([X(0), yBot(0), 0], [X(0), yBot(0), L], [X(0), yTop(0), 0]);
-    push([X(0), yTop(0), 0], [X(0), yBot(0), L], [X(0), yTop(0), L]);
-    push([X(last), yBot(last), 0], [X(last), yTop(last), 0], [X(last), yBot(last), L]);
-    push([X(last), yTop(last), 0], [X(last), yTop(last), L], [X(last), yBot(last), L]);
+    // Print layout: profile flat in XY, cell axis becomes the vertical Z.
+    emitPieceTriangles(piece, (t, z, s) => [startX + t - t0, z - zBase, s], push);
 
     summaries.push({
       label: piece.label,

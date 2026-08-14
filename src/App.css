@@ -1784,3 +1784,23 @@
     display: none;
   }
 }
+
+.scene-legend .legend-toggle {
+  margin-left: 8px;
+  padding: 3px 10px;
+  border: 1px solid rgba(216, 180, 106, 0.35);
+  border-radius: 999px;
+  background: transparent;
+  color: #8f9ba0;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.scene-legend .legend-toggle.active {
+  background: rgba(216, 180, 106, 0.16);
+  color: #d8b46a;
+  border-color: rgba(216, 180, 106, 0.7);
+}

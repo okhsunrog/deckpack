@@ -7,6 +7,7 @@ import { useLayoutEngine } from "./components/use-layout-engine";
 import { componentsLibrary, getCell } from "./data/library";
 import { evaluateWorkspace } from "./domain/geometry";
 import { generateHolder } from "./domain/holder";
+import { planSignature } from "./domain/packing";
 import { activeServiceReservations } from "./domain/service-reservations";
 import { PlannerScene } from "./scene/PlannerScene";
 import { usePlannerStore } from "./store/planner-store";
@@ -56,22 +57,30 @@ function App() {
   const config = usePlannerStore((state) => state.config);
   const placements = usePlannerStore((state) => state.placements);
   const selectedPlanId = usePlannerStore((state) => state.selectedPlanId);
+  const selectedPlanKey = usePlannerStore((state) => state.selectedPlanKey);
   const selectedComponentId = usePlannerStore((state) => state.selectedComponentId);
-  const setSelectedPlanId = usePlannerStore((state) => state.setSelectedPlanId);
+  const setSelectedPlan = usePlannerStore((state) => state.setSelectedPlan);
   const setSelectedComponentId = usePlannerStore((state) => state.setSelectedComponentId);
   const updateComponent = usePlannerStore((state) => state.updateComponent);
   const removeComponent = usePlannerStore((state) => state.removeComponent);
   const setService = usePlannerStore((state) => state.setService);
   const resetProject = usePlannerStore((state) => state.resetProject);
+  const showHolders = usePlannerStore((state) => state.showHolders);
+  const setShowHolders = usePlannerStore((state) => state.setShowHolders);
   const cell = getCell(config.pack.cellId);
   const { plans, exploredCount, loading } = useLayoutEngine(config, cell);
-  const selectedPlan = plans.find((plan) => plan.id === selectedPlanId) ?? plans[0];
+  // Ids change whenever tolerances or the enclosure change, so fall back to
+  // the lattice signature before giving up and taking the top-ranked plan.
+  const selectedPlan =
+    plans.find((plan) => plan.id === selectedPlanId) ??
+    plans.find((plan) => planSignature(plan) === selectedPlanKey) ??
+    plans[0];
 
   useEffect(() => {
     if (!loading && selectedPlan && selectedPlan.id !== selectedPlanId) {
-      setSelectedPlanId(selectedPlan.id);
+      setSelectedPlan(selectedPlan.id, planSignature(selectedPlan));
     }
-  }, [loading, selectedPlan, selectedPlanId, setSelectedPlanId]);
+  }, [loading, selectedPlan, selectedPlanId, setSelectedPlan]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -173,12 +182,23 @@ function App() {
               <span>
                 <i className="legend-collision" /> коллизия
               </span>
+              <button
+                type="button"
+                className={`legend-toggle ${showHolders ? "active" : ""}`}
+                aria-pressed={showHolders}
+                onClick={() => setShowHolders(!showHolders)}
+              >
+                холдер
+              </button>
             </div>
           </div>
           <div className="scene-frame">
             <PlannerScene
               enclosure={config.enclosure}
               plan={selectedPlan}
+              cell={cell}
+              toleranceStack={config.pack.toleranceStack}
+              showHolders={showHolders}
               components={placements}
               componentSpecs={componentsLibrary}
               evaluation={evaluation}

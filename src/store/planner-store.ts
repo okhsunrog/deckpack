@@ -90,17 +90,21 @@ interface PlannerState {
   config: PlannerConfig;
   placements: ComponentPlacement[];
   selectedPlanId?: string;
+  /** Lattice signature of the selection: survives plan-id reshuffles. */
+  selectedPlanKey?: string;
   selectedComponentId?: string;
   rightPanel: "variants" | "components";
+  showHolders: boolean;
   setEnclosureKind: (kind: EnclosureSpec["kind"]) => void;
   setEnclosureDimension: (key: keyof Dimensions3D, value: number) => void;
   setPackField: <K extends keyof PackRequest>(key: K, value: PackRequest[K]) => void;
   setTolerance: (id: string, thicknessMm: number) => void;
   setService: (id: string, patch: Partial<ServiceReservation>) => void;
   setWiringExitMode: (mode: WiringExitMode) => void;
-  setSelectedPlanId: (id: string | undefined) => void;
+  setSelectedPlan: (id: string | undefined, key: string | undefined) => void;
   setSelectedComponentId: (id: string | undefined) => void;
   setRightPanel: (panel: "variants" | "components") => void;
+  setShowHolders: (show: boolean) => void;
   addComponent: (spec: ComponentSpec) => void;
   updateComponent: (id: string, patch: Partial<ComponentPlacement>) => void;
   removeComponent: (id: string) => void;
@@ -117,6 +121,7 @@ export const usePlannerStore = create<PlannerState>()(
       config: freshConfig(),
       placements: [],
       rightPanel: "variants",
+      showHolders: true,
       setEnclosureKind: (kind) =>
         set((state) => {
           if (state.config.enclosure.kind === kind) return state;
@@ -133,6 +138,7 @@ export const usePlannerStore = create<PlannerState>()(
             },
             placements: [],
             selectedPlanId: undefined,
+            selectedPlanKey: undefined,
             selectedComponentId: undefined,
           };
         }),
@@ -184,7 +190,9 @@ export const usePlannerStore = create<PlannerState>()(
             pack: updateWiringExitMode(state.config.pack, mode),
           },
         })),
-      setSelectedPlanId: (selectedPlanId) => set({ selectedPlanId }),
+      setSelectedPlan: (selectedPlanId, selectedPlanKey) =>
+        set({ selectedPlanId, selectedPlanKey }),
+      setShowHolders: (showHolders) => set({ showHolders }),
       setSelectedComponentId: (selectedComponentId) => set({ selectedComponentId }),
       setRightPanel: (rightPanel) => set({ rightPanel }),
       addComponent: (spec) =>
@@ -226,6 +234,7 @@ export const usePlannerStore = create<PlannerState>()(
           config: freshConfig(),
           placements: [],
           selectedPlanId: undefined,
+          selectedPlanKey: undefined,
           selectedComponentId: undefined,
           rightPanel: "variants",
         }),
@@ -239,12 +248,14 @@ export const usePlannerStore = create<PlannerState>()(
         config: freshConfig(),
         placements: [],
         selectedPlanId: undefined,
+        selectedPlanKey: undefined,
       }),
       merge: (persisted, current) => {
         const stored = (persisted ?? {}) as Partial<{
           config: unknown;
           placements: unknown;
           selectedPlanId: unknown;
+          selectedPlanKey: unknown;
         }>;
         const config = sanitizePersistedConfig(stored.config);
         const placements = sanitizePersistedPlacements(stored.placements);
@@ -254,12 +265,15 @@ export const usePlannerStore = create<PlannerState>()(
           placements: config ? (placements ?? []) : [],
           selectedPlanId:
             typeof stored.selectedPlanId === "string" ? stored.selectedPlanId : undefined,
+          selectedPlanKey:
+            typeof stored.selectedPlanKey === "string" ? stored.selectedPlanKey : undefined,
         };
       },
       partialize: (state) => ({
         config: state.config,
         placements: state.placements,
         selectedPlanId: state.selectedPlanId,
+        selectedPlanKey: state.selectedPlanKey,
       }),
     },
   ),

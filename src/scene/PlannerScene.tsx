@@ -12,10 +12,12 @@ import {
 } from "react";
 import {
   BoxGeometry,
+  BufferGeometry,
   Color,
   CylinderGeometry,
   DoubleSide,
   EdgesGeometry,
+  Float32BufferAttribute,
   Group,
   InstancedMesh,
   Matrix4,
@@ -28,8 +30,10 @@ import {
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { getHeightMapAsset } from "../data/enclosures";
 import { boxCenter, boxSize, componentBox } from "../domain/geometry";
+import { assembledPieceTriangles, computeHolderPieces } from "../domain/holder";
 import type {
   Box3D,
+  CellSpec,
   ComponentPlacement,
   ComponentSpec,
   ComponentVisual,
@@ -39,6 +43,7 @@ import type {
   PackPlan,
   ServiceReservation,
   ServiceVolume,
+  ToleranceLayer,
   Vec3,
   WorkspaceEvaluation,
 } from "../domain/types";
@@ -46,6 +51,9 @@ import type {
 interface PlannerSceneProps {
   enclosure: EnclosureSpec;
   plan?: PackPlan;
+  cell: CellSpec;
+  toleranceStack: ToleranceLayer[];
+  showHolders: boolean;
   components: ComponentPlacement[];
   componentSpecs: ComponentSpec[];
   evaluation?: WorkspaceEvaluation;
@@ -283,7 +291,44 @@ function orientationQuaternion(orientation: PackPlan["orientation"]): Quaternion
   return quaternion;
 }
 
-function CellInstances({ plan }: { plan: PackPlan }) {
+function HolderObjects({
+  plan,
+  cell,
+  toleranceStack,
+}: {
+  plan: PackPlan;
+  cell: CellSpec;
+  toleranceStack: ToleranceLayer[];
+}) {
+  const geometry = useDisposable(
+    useMemo(() => {
+      const result = new BufferGeometry();
+      if (plan.orientation === "z") return result;
+      const layout = computeHolderPieces(plan, cell, toleranceStack);
+      const positions: number[] = [];
+      for (const piece of layout.pieces) {
+        positions.push(...assembledPieceTriangles(piece, layout));
+      }
+      result.setAttribute("position", new Float32BufferAttribute(positions, 3));
+      result.computeVertexNormals();
+      return result;
+    }, [plan, cell, toleranceStack]),
+  );
+  return (
+    <mesh geometry={geometry}>
+      <meshStandardMaterial
+        color="#e0b964"
+        emissive="#5c451a"
+        emissiveIntensity={0.3}
+        roughness={0.5}
+        metalness={0.05}
+        side={DoubleSide}
+      />
+    </mesh>
+  );
+}
+
+function CellInstances({ plan, ghosted }: { plan: PackPlan; ghosted: boolean }) {
   const meshRef = useRef<InstancedMesh>(null);
   const diameter = Math.min(...plan.cellSizeMm);
   const height = Math.max(...plan.cellSizeMm);
@@ -291,7 +336,19 @@ function CellInstances({ plan }: { plan: PackPlan }) {
     useMemo(() => new CylinderGeometry(diameter / 2, diameter / 2, height, 20), [diameter, height]),
   );
   const material = useDisposable(
-    useMemo(() => new MeshStandardMaterial({ roughness: 0.48, metalness: 0.16 }), []),
+    useMemo(
+      () =>
+        new MeshStandardMaterial({
+          roughness: 0.48,
+          metalness: 0.16,
+          // While the holder is displayed the cells become see-through shells
+          // drawn over it, so the combs stay readable behind them.
+          transparent: ghosted,
+          opacity: ghosted ? 0.42 : 1,
+          depthWrite: !ghosted,
+        }),
+      [ghosted],
+    ),
   );
 
   useLayoutEffect(() => {
@@ -311,7 +368,9 @@ function CellInstances({ plan }: { plan: PackPlan }) {
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     mesh.computeBoundingBox();
     mesh.computeBoundingSphere();
-  }, [plan]);
+    // geometry/material changes recreate the InstancedMesh, so the matrices
+    // must be filled again even when the plan itself is unchanged.
+  }, [plan, geometry, material]);
 
   return (
     <instancedMesh
@@ -833,7 +892,10 @@ function SceneContents(props: SceneContentsProps) {
       {plan && (
         <>
           <BoxObject box={plan.blocks[0].envelope} color="#d99a46" opacity={0.06} />
-          <CellInstances plan={plan} />
+          <CellInstances plan={plan} ghosted={props.showHolders && plan.orientation !== "z"} />
+          {props.showHolders && plan.orientation !== "z" && (
+            <HolderObjects plan={plan} cell={props.cell} toleranceStack={props.toleranceStack} />
+          )}
           {plan.serviceVolumes.map((volume) => {
             const reservation = props.serviceReservations.find((item) => item.id === volume.id);
             if (!reservation) return null;

@@ -1,6 +1,6 @@
 import { componentsLibrary } from "../data/library";
 import { boxSize } from "../domain/geometry";
-import { formatFactors } from "../domain/packing";
+import { formatFactors, planSignature } from "../domain/packing";
 import type { ComponentPlacement, PackPlan, WorkspaceEvaluation } from "../domain/types";
 import { usePlannerStore } from "../store/planner-store";
 import { NumberField } from "./NumberField";
@@ -188,7 +188,7 @@ export function ResultsPanel({
   evaluation,
 }: ResultsPanelProps) {
   const selectedPlanId = usePlannerStore((state) => state.selectedPlanId);
-  const setSelectedPlanId = usePlannerStore((state) => state.setSelectedPlanId);
+  const setSelectedPlan = usePlannerStore((state) => state.setSelectedPlan);
   const placements = usePlannerStore((state) => state.placements);
   const selectedComponentId = usePlannerStore((state) => state.selectedComponentId);
   const setSelectedComponentId = usePlannerStore((state) => state.setSelectedComponentId);
@@ -252,7 +252,7 @@ export function ResultsPanel({
                 key={plan.id}
                 plan={plan}
                 active={plan.id === selectedPlanId}
-                onSelect={() => setSelectedPlanId(plan.id)}
+                onSelect={() => setSelectedPlan(plan.id, planSignature(plan))}
               />
             ))}
           </div>
