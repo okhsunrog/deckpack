@@ -214,11 +214,11 @@ describe("Spark case enumeration", () => {
     }
   });
 
-  it("rests the main bottom layer on the 46 mm deep floor when the pack fits it", () => {
+  it("rests the main bottom layer on the 48 mm deep floor when the pack fits it", () => {
     const config = structuredClone(defaultConfig);
     config.pack.parallelCount = 2;
     const plans = enumeratePackPlans({ config, cell }).plans;
-    const deepRestZ = spec.dimensionsMm.height / 2 - 46 + PROFILE_RADIUS_MM;
+    const deepRestZ = spec.dimensionsMm.height / 2 - 48 + PROFILE_RADIUS_MM;
     const resting = plans.filter((plan) => Math.abs(minCellZ(plan) - deepRestZ) < 0.01);
     expect(resting.length).toBeGreaterThan(0);
     expect(resting.some((plan) => plan.metrics.layerCount === 2)).toBe(true);

@@ -1,4 +1,9 @@
-"""Generate the browser assets for the user-provided Spark case STL pair.
+"""Generate the browser assets for the user-provided Spark case STL.
+
+The collision source is the carbon 2 mm shell (full-2mm.stl): the outer
+surface matches the printable two-part model exactly, but the walls above the
+rim belt are thinned to 2 mm, so the interior is deeper and the printable
+halves are kept only as reference geometry.
 
 Run with:
   uv run --with trimesh --with rtree --with scipy python scripts/generate_spark_enclosure.py
@@ -16,6 +21,7 @@ import trimesh
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DIR = ROOT / "assets" / "enclosures" / "spark-case" / "source"
+FULL_MODEL = SOURCE_DIR / "full-2mm.stl"
 PART_1 = SOURCE_DIR / "part1.stl"
 PART_2 = SOURCE_DIR / "part2.stl"
 MODEL_OUTPUT = ROOT / "public" / "models" / "enclosures" / "spark-case.stl"
@@ -30,16 +36,23 @@ JOINT_OVERLAP_MM = 5.0
 
 
 def load_assembly() -> tuple[trimesh.Trimesh, float, float]:
-    part_1 = trimesh.load_mesh(PART_1, process=True)
-    part_2 = trimesh.load_mesh(PART_2, process=True)
-    if not part_1.is_watertight or not part_2.is_watertight:
-        raise RuntimeError("Spark case source meshes must be watertight")
+    if FULL_MODEL.exists():
+        assembly = trimesh.load_mesh(FULL_MODEL, process=True)
+        # The carbon shell is closed but carries a few non-manifold seam
+        # edges, so is_watertight is intentionally not required here.
+        if len(assembly.faces) == 0:
+            raise RuntimeError("Spark case full model failed to load")
+    else:
+        part_1 = trimesh.load_mesh(PART_1, process=True)
+        part_2 = trimesh.load_mesh(PART_2, process=True)
+        if not part_1.is_watertight or not part_2.is_watertight:
+            raise RuntimeError("Spark case source meshes must be watertight")
 
-    # The first 5 mm of part 1 form a thin tongue. Part 2 has the matching
-    # stepped lip, so the two printable halves overlap instead of meeting edge
-    # to edge. In the overlap their two 2 mm skins recreate the 4 mm floor.
-    part_2.apply_translation([0, JOINT_OVERLAP_MM - part_2.bounds[1, 1], 0])
-    assembly = trimesh.util.concatenate([part_1, part_2])
+        # The first 5 mm of part 1 form a thin tongue. Part 2 has the matching
+        # stepped lip, so the two printable halves overlap instead of meeting
+        # edge to edge. In the overlap their two 2 mm skins recreate the floor.
+        part_2.apply_translation([0, JOINT_OVERLAP_MM - part_2.bounds[1, 1], 0])
+        assembly = trimesh.util.concatenate([part_1, part_2])
     center_mesh_x = float((assembly.bounds[0, 0] + assembly.bounds[1, 0]) / 2)
     center_mesh_y = float((assembly.bounds[0, 1] + assembly.bounds[1, 1]) / 2)
     return assembly, center_mesh_x, center_mesh_y
@@ -148,7 +161,7 @@ def main() -> None:
     depth_map = extract_depth_map(assembly, center_mesh_x, center_mesh_y)
     payload = {
         "id": "spark-case",
-        "label": "Spark case",
+        "label": "Spark case (carbon 2 mm)",
         "kind": "mesh-heightmap",
         "dimensionsMm": {
             "length": source_length,

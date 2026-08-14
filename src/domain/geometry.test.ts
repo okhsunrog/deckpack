@@ -38,16 +38,22 @@ describe("Spark case geometry", () => {
     const shallowProbe = boxFromCenterSize([-95, 0, 0], [2, 2, 0]);
     const deepProbe = boxFromCenterSize([50, 0, 0], [2, 2, 0]);
 
-    expect(availableDepthForBox(defaultConfig.enclosure, shallowProbe)).toBe(34);
-    expect(availableDepthForBox(defaultConfig.enclosure, deepProbe)).toBe(46);
+    expect(availableDepthForBox(defaultConfig.enclosure, shallowProbe)).toBe(36);
+    expect(availableDepthForBox(defaultConfig.enclosure, deepProbe)).toBe(48);
   });
 
-  it("has no vertical obstacle at the two-part joint", () => {
-    // The printable halves overlap by 5 mm around x ≈ 0; a butt joint used to
-    // leave a shallow stripe in the depth map.
-    for (let x = -20; x <= 20; x += 2) {
-      const probe = boxFromCenterSize([x, 0, 0], [2, 60, 0]);
-      expect(availableDepthForBox(defaultConfig.enclosure, probe)).toBe(46);
+  it("keeps the seam reinforcement ridge at 2 mm and the rest of the floor flat", () => {
+    // The carbon shell keeps a ~6 mm wide 4 mm thick reinforcement band at the
+    // old two-part seam (x ≈ -24..-18): a 2 mm step above the 48 mm floor.
+    // Everything else across the deep tub must be full depth.
+    for (let x = -30; x <= 20; x += 1) {
+      const probe = boxFromCenterSize([x, 0, 0], [1, 60, 0]);
+      const depth = availableDepthForBox(defaultConfig.enclosure, probe);
+      if (x >= -26 && x <= -16) {
+        expect(depth).toBeGreaterThanOrEqual(46);
+      } else {
+        expect(depth).toBe(48);
+      }
     }
   });
 });
