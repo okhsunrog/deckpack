@@ -54,13 +54,25 @@ const packSchema = z.object({
 
 const configSchema = z.object({ enclosure: enclosureSchema, pack: packSchema });
 
-const placementSchema = z.object({
-  id: z.string(),
-  componentId: z.string(),
-  position: z.tuple([z.number(), z.number()]),
-  rotationQuarterTurns: z.number().int(),
-  dimensionsMm: dimensionsSchema,
-});
+const placementSchema = z
+  .object({
+    id: z.string(),
+    componentId: z.string(),
+    position: z.tuple([z.number(), z.number()]),
+    rotationDeg: z.number().optional(),
+    // Legacy field from before free-angle rotation existed.
+    rotationQuarterTurns: z.number().int().optional(),
+    dimensionsMm: dimensionsSchema,
+  })
+  .transform(
+    (placement): ComponentPlacement => ({
+      id: placement.id,
+      componentId: placement.componentId,
+      position: placement.position,
+      rotationDeg: placement.rotationDeg ?? (placement.rotationQuarterTurns ?? 0) * 90,
+      dimensionsMm: placement.dimensionsMm,
+    }),
+  );
 
 /**
  * localStorage is untrusted input: an older schema, a partial write, or a

@@ -630,7 +630,6 @@ function ComponentObjects({
 }) {
   return components.map((component) => {
     const box = componentBox(component, enclosure);
-    const size = boxSize(box);
     const center = boxCenter(box);
     const spec = specs.find((candidate) => candidate.id === component.componentId);
     const state = evaluation?.components.find((item) => item.id === component.id);
@@ -645,7 +644,7 @@ function ComponentObjects({
       color: "#839099",
     };
     const renderedSpec = spec ?? fallbackSpec;
-    const rotationZ = component.rotationQuarterTurns * (Math.PI / 2);
+    const rotationZ = (component.rotationDeg * Math.PI) / 180;
     return (
       <group key={component.id}>
         <group
@@ -680,14 +679,17 @@ function ComponentObjects({
               <meshBasicMaterial color="#ff3f52" transparent opacity={0.44} depthWrite={false} />
             </RoundedBox>
           )}
+          {selected && (
+            <BoxEdges
+              size={[
+                component.dimensionsMm.length + 3,
+                component.dimensionsMm.width + 3,
+                component.dimensionsMm.height + 3,
+              ]}
+              color="#f5c36b"
+            />
+          )}
         </group>
-        {selected && (
-          <BoxEdges
-            size={[size[0] + 3, size[1] + 3, size[2] + 3]}
-            color="#f5c36b"
-            position={center}
-          />
-        )}
         <Text
           position={[center[0], center[1], box.max[2] + 3]}
           fontSize={5.5}

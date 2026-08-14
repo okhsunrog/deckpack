@@ -211,7 +211,8 @@ export interface ComponentPlacement {
   id: string;
   componentId: string;
   position: [number, number];
-  rotationQuarterTurns: number;
+  /** Yaw around Z in degrees; any angle, not just quarter turns. */
+  rotationDeg: number;
   dimensionsMm: Dimensions3D;
 }
 

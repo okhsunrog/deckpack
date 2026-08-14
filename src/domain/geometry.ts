@@ -485,26 +485,145 @@ export function dimensionsToVec3(dimensions: Dimensions3D): Vec3 {
   return [dimensions.length, dimensions.width, dimensions.height];
 }
 
-export function componentBox(placement: ComponentPlacement, enclosure: EnclosureSpec): Box3D {
-  const rotated = placement.rotationQuarterTurns % 2 !== 0;
-  const size: Vec3 = rotated
-    ? [placement.dimensionsMm.width, placement.dimensionsMm.length, placement.dimensionsMm.height]
-    : dimensionsToVec3(placement.dimensionsMm);
-  if (enclosure.kind === "box") {
-    const z = -enclosure.dimensionsMm.height / 2 + size[2] / 2;
-    return boxFromCenterSize([placement.position[0], placement.position[1], z], size);
+/** A component's rotated rectangular footprint in the deck plane. */
+export interface Footprint2D {
+  centerXmm: number;
+  centerYmm: number;
+  halfLengthMm: number;
+  halfWidthMm: number;
+  angleRad: number;
+}
+
+export function componentFootprint(placement: ComponentPlacement): Footprint2D {
+  return {
+    centerXmm: placement.position[0],
+    centerYmm: placement.position[1],
+    halfLengthMm: placement.dimensionsMm.length / 2,
+    halfWidthMm: placement.dimensionsMm.width / 2,
+    angleRad: (placement.rotationDeg * Math.PI) / 180,
+  };
+}
+
+function boxFootprint(box: Box3D): Footprint2D {
+  return {
+    centerXmm: (box.min[0] + box.max[0]) / 2,
+    centerYmm: (box.min[1] + box.max[1]) / 2,
+    halfLengthMm: (box.max[0] - box.min[0]) / 2,
+    halfWidthMm: (box.max[1] - box.min[1]) / 2,
+    angleRad: 0,
+  };
+}
+
+export function footprintCorners(footprint: Footprint2D): Array<[number, number]> {
+  const cos = Math.cos(footprint.angleRad);
+  const sin = Math.sin(footprint.angleRad);
+  const corners: Array<[number, number]> = [];
+  for (const su of [-1, 1]) {
+    for (const sv of [-1, 1]) {
+      const u = su * footprint.halfLengthMm;
+      const v = sv * footprint.halfWidthMm;
+      corners.push([
+        footprint.centerXmm + u * cos - v * sin,
+        footprint.centerYmm + u * sin + v * cos,
+      ]);
+    }
   }
-  const footprint = boxFromCenterSize(
-    [placement.position[0], placement.position[1], 0],
-    [size[0], size[1], 0],
-  );
-  const availableDepth = availableDepthForBox(enclosure, footprint);
-  const topZ = enclosure.dimensionsMm.height / 2;
-  const floorZ = topZ - availableDepth;
-  return boxFromCenterSize(
-    [placement.position[0], placement.position[1], floorZ + size[2] / 2],
-    size,
-  );
+  return corners;
+}
+
+/** Separating-axis test for two rotated rectangles in the deck plane. */
+export function footprintsIntersect(a: Footprint2D, b: Footprint2D): boolean {
+  const cornersA = footprintCorners(a);
+  const cornersB = footprintCorners(b);
+  for (const shape of [a, b]) {
+    const axes: Array<[number, number]> = [
+      [Math.cos(shape.angleRad), Math.sin(shape.angleRad)],
+      [-Math.sin(shape.angleRad), Math.cos(shape.angleRad)],
+    ];
+    for (const [ax, ay] of axes) {
+      let minA = Infinity;
+      let maxA = -Infinity;
+      for (const [x, y] of cornersA) {
+        const dot = x * ax + y * ay;
+        minA = Math.min(minA, dot);
+        maxA = Math.max(maxA, dot);
+      }
+      let minB = Infinity;
+      let maxB = -Infinity;
+      for (const [x, y] of cornersB) {
+        const dot = x * ax + y * ay;
+        minB = Math.min(minB, dot);
+        maxB = Math.max(maxB, dot);
+      }
+      if (maxA <= minB + EPSILON || maxB <= minA + EPSILON) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Free depth under a rotated footprint: minimum over the height-map cells the
+ * rectangle actually covers, so a diagonal component is not penalized for the
+ * corners of its axis-aligned bounding box.
+ */
+export function availableDepthForFootprint(spec: EnclosureSpec, footprint: Footprint2D): number {
+  if (spec.kind === "box") return spec.dimensionsMm.height;
+  const map = compiledHeightMap(spec);
+  const margin = map.safetyMarginMm;
+  const cos = Math.cos(footprint.angleRad);
+  const sin = Math.sin(footprint.angleRad);
+  const reachX =
+    Math.abs(cos) * footprint.halfLengthMm + Math.abs(sin) * footprint.halfWidthMm + margin;
+  const reachY =
+    Math.abs(sin) * footprint.halfLengthMm + Math.abs(cos) * footprint.halfWidthMm + margin;
+  const c0 = Math.floor((footprint.centerXmm - reachX - map.origin[0]) / map.stepMm);
+  const c1 = Math.ceil((footprint.centerXmm + reachX - map.origin[0]) / map.stepMm);
+  const r0 = Math.floor((footprint.centerYmm - reachY - map.origin[1]) / map.stepMm);
+  const r1 = Math.ceil((footprint.centerYmm + reachY - map.origin[1]) / map.stepMm);
+  if (c0 < 0 || c1 >= map.columns || r0 < 0 || r1 >= map.rows) return 0;
+  const uLimit = footprint.halfLengthMm + margin;
+  const vLimit = footprint.halfWidthMm + margin;
+  let minimum = 255;
+  const base = map.levels[0];
+  for (let row = r0; row <= r1; row += 1) {
+    const y = map.origin[1] + row * map.stepMm - footprint.centerYmm;
+    for (let column = c0; column <= c1; column += 1) {
+      const x = map.origin[0] + column * map.stepMm - footprint.centerXmm;
+      const u = x * cos + y * sin;
+      if (u < -uLimit || u > uLimit) continue;
+      const v = -x * sin + y * cos;
+      if (v < -vLimit || v > vLimit) continue;
+      const value = base[row * map.columns + column];
+      if (value < minimum) minimum = value;
+      if (minimum === 0) return 0;
+    }
+  }
+  return minimum * map.quantizationMm;
+}
+
+export function componentBox(placement: ComponentPlacement, enclosure: EnclosureSpec): Box3D {
+  const footprint = componentFootprint(placement);
+  const corners = footprintCorners(footprint);
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const [x, y] of corners) {
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
+  const height = placement.dimensionsMm.height;
+  const floorZ =
+    enclosure.kind === "box"
+      ? -enclosure.dimensionsMm.height / 2
+      : enclosure.dimensionsMm.height / 2 - availableDepthForFootprint(enclosure, footprint);
+  return { min: [minX, minY, floorZ], max: [maxX, maxY, floorZ + height] };
+}
+
+function zRangesOverlap(a: Box3D, b: Box3D): boolean {
+  return a.min[2] < b.max[2] && a.max[2] > b.min[2];
 }
 
 export function evaluateWorkspace(
@@ -517,18 +636,32 @@ export function evaluateWorkspace(
     ...plan.blocks.map((block) => block.envelope),
     ...plan.serviceVolumes.map((v) => v.box),
   ];
+  const footprints = components.map(componentFootprint);
   const boxes = components.map((placement) => componentBox(placement, enclosure));
+  const topZ = container.max[2];
   const evaluated = components.map((component, index) => {
     const box = boxes[index];
-    const collidesPack = packObstacles.some((obstacle) => boxesIntersect(box, obstacle));
-    const collidesComponent = boxes.some(
-      (other, otherIndex) => otherIndex !== index && boxesIntersect(box, other),
+    const footprint = footprints[index];
+    const collidesPack = packObstacles.some(
+      (obstacle) =>
+        zRangesOverlap(box, obstacle) && footprintsIntersect(footprint, boxFootprint(obstacle)),
     );
+    const collidesComponent = footprints.some(
+      (other, otherIndex) =>
+        otherIndex !== index &&
+        zRangesOverlap(box, boxes[otherIndex]) &&
+        footprintsIntersect(footprint, other),
+    );
+    const outside =
+      enclosure.kind === "box"
+        ? !containsBox(container, box)
+        : box.max[2] > topZ + EPSILON ||
+          availableDepthForFootprint(enclosure, footprint) + EPSILON < topZ - box.min[2];
     return {
       id: component.id,
       box,
       collides: collidesPack || collidesComponent,
-      outside: !enclosureContainmentKernel.contains(enclosure, box),
+      outside,
     };
   });
   const allObstacles = [...packObstacles, ...boxes];

@@ -192,7 +192,7 @@ export const usePlannerStore = create<PlannerState>()(
                 id,
                 componentId: spec.id,
                 position: [tailX, spreadY],
-                rotationQuarterTurns: 0,
+                rotationDeg: 0,
                 dimensionsMm: { ...spec.dimensionsMm },
               },
             ],

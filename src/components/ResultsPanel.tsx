@@ -11,6 +11,12 @@ const ANCHOR_LABEL = {
   nose: "нос",
   profile: "по профилю",
 } as const;
+
+/** Keep the stored angle in (-180, 180] so the editor stays readable. */
+function normalizeAngleDeg(value: number): number {
+  const wrapped = ((value % 360) + 360) % 360;
+  return wrapped > 180 ? wrapped - 360 : wrapped;
+}
 const ORIENTATION_LABEL = { x: "вдоль X", y: "поперёк Y", z: "стоя Z" } as const;
 
 interface ResultsPanelProps {
@@ -124,17 +130,28 @@ function PlacementEditor({
           />
         ))}
       </div>
-      <button
-        type="button"
-        className="rotate-button"
-        onClick={() =>
-          updateComponent(placement.id, {
-            rotationQuarterTurns: (placement.rotationQuarterTurns + 1) % 4,
-          })
-        }
-      >
-        ↻ Повернуть на 90° <span>{placement.rotationQuarterTurns * 90}°</span>
-      </button>
+      <div className="rotation-controls">
+        <NumberField
+          label="Угол"
+          value={placement.rotationDeg}
+          step={5}
+          unit="°"
+          onChange={(value) =>
+            updateComponent(placement.id, { rotationDeg: normalizeAngleDeg(value) })
+          }
+        />
+        <button
+          type="button"
+          className="rotate-button"
+          onClick={() =>
+            updateComponent(placement.id, {
+              rotationDeg: normalizeAngleDeg(placement.rotationDeg + 90),
+            })
+          }
+        >
+          ↻ +90°
+        </button>
+      </div>
       {spec?.source && <p className="source-note">{spec.source.dimensionBasis}</p>}
       {spec?.visual && spec.visual.kind !== "procedural" && (
         <p className="visual-credit">

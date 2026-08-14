@@ -5,10 +5,12 @@ import { defaultConfig } from "../store/planner-store";
 import type { ComponentPlacement, MeshHeightMapEnclosureSpec } from "./types";
 import {
   availableDepthForBox,
+  availableDepthForFootprint,
   boxFromCenterSize,
   boxesIntersect,
   cylinderFitsProfile,
   evaluateWorkspace,
+  footprintsIntersect,
   largestEmptyAxisAlignedBox,
   minCylinderCenterZ,
   unionVolumeMm3,
@@ -141,6 +143,56 @@ describe("cylinder vs height field", () => {
   });
 });
 
+describe("rotated footprints", () => {
+  it("lets a diagonal component pass where its bounding box would collide", () => {
+    // A 60×20 plate rotated 45° sits diagonally next to an axis-aligned block.
+    const diagonal = {
+      centerXmm: 30,
+      centerYmm: 30,
+      halfLengthMm: 30,
+      halfWidthMm: 10,
+      angleRad: Math.PI / 4,
+    };
+    const block = {
+      centerXmm: 45,
+      centerYmm: 5,
+      halfLengthMm: 10,
+      halfWidthMm: 10,
+      angleRad: 0,
+    };
+    // Bounding boxes overlap (diagonal AABB spans ~2..58 in both axes)...
+    expect(
+      boxesIntersect(
+        boxFromCenterSize([30, 30, 0], [57, 57, 10]),
+        boxFromCenterSize([45, 5, 0], [20, 20, 10]),
+      ),
+    ).toBe(true);
+    // ...but the actual rectangles are separated, and a truly crossing block is not.
+    expect(footprintsIntersect(diagonal, block)).toBe(false);
+    expect(footprintsIntersect(diagonal, { ...block, centerXmm: 30, centerYmm: 25 })).toBe(true);
+  });
+
+  it("rests a rotated component on the depth of its true footprint", () => {
+    // Diagonal plate near the test ramp: its AABB reaches over the ramp but the
+    // rectangle itself stays on the deep floor.
+    const spec: MeshHeightMapEnclosureSpec = {
+      kind: "mesh-heightmap",
+      assetId: "test-ramp",
+      dimensionsMm: { length: 60, width: 40, height: 50 },
+    };
+    const footprint = {
+      centerXmm: -14,
+      centerYmm: 0,
+      halfLengthMm: 14,
+      halfWidthMm: 5,
+      angleRad: Math.PI / 4,
+    };
+    // AABB reaches x ≈ -0.5..+? → over the ramp; the rotated rect ends left of 0...
+    expect(availableDepthForFootprint(spec, footprint)).toBe(46);
+    expect(availableDepthForFootprint(spec, { ...footprint, centerXmm: 2 })).toBeLessThan(46);
+  });
+});
+
 describe("union volume", () => {
   const container = boxFromCenterSize([0, 0, 0], [100, 100, 100]);
 
@@ -176,7 +228,7 @@ describe("workspace evaluation", () => {
       id: "esc-1",
       componentId: esc.id,
       position: [x, 0],
-      rotationQuarterTurns: 0,
+      rotationDeg: 0,
       dimensionsMm: { ...esc.dimensionsMm },
     };
   }
