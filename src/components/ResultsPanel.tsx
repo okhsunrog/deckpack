@@ -68,10 +68,12 @@ function PlacementEditor({
         </div>
         <button
           type="button"
-          className="text-button danger"
+          className="delete-component-button"
           onClick={() => removeComponent(placement.id)}
         >
-          удалить
+          <span aria-hidden="true">×</span>
+          Удалить
+          <kbd>Del</kbd>
         </button>
       </div>
       <div className={`placement-state ${state?.outside || state?.collides ? "invalid" : "valid"}`}>

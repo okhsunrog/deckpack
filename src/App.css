@@ -1392,16 +1392,100 @@
     sans-serif;
 }
 
-.text-button {
-  padding: 3px;
-  border: 0;
+.delete-component-button {
+  display: grid;
+  grid-template-columns: 13px auto auto;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 7px;
+  border: 1px solid rgb(255 91 100 / 36%);
+  border-radius: 2px;
   font-size: 8px;
-  color: var(--text-dim);
-  background: transparent;
+  color: #ef9398;
+  background: rgb(89 27 34 / 20%);
 }
 
-.text-button.danger {
-  color: #c36e73;
+.delete-component-button:hover {
+  border-color: rgb(255 91 100 / 72%);
+  color: #ffc1c4;
+  background: rgb(112 31 40 / 34%);
+}
+
+.delete-component-button > span {
+  font:
+    500 14px/0.7 "JetBrains Mono",
+    monospace;
+  color: var(--danger);
+}
+
+.delete-component-button kbd,
+.component-context-menu kbd {
+  padding: 2px 4px;
+  border: 1px solid #4b3d40;
+  border-radius: 2px;
+  font:
+    500 6px/1 "JetBrains Mono",
+    monospace;
+  color: #a88589;
+  background: #20191c;
+}
+
+.component-context-menu {
+  position: absolute;
+  z-index: 8;
+  display: grid;
+  width: 180px;
+  padding: 9px;
+  border: 1px solid #53636a;
+  border-radius: 3px;
+  background: rgb(10 19 24 / 96%);
+  box-shadow: 0 14px 34px rgb(0 0 0 / 46%);
+  backdrop-filter: blur(10px);
+}
+
+.component-context-menu > span {
+  font:
+    500 6px/1 "JetBrains Mono",
+    monospace;
+  letter-spacing: 0.1em;
+  color: var(--fishpaper);
+}
+
+.component-context-menu > b {
+  overflow: hidden;
+  margin-top: 4px;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.component-context-menu > button {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  margin-top: 9px;
+  padding: 7px 8px;
+  border: 1px solid rgb(255 91 100 / 38%);
+  border-radius: 2px;
+  text-align: left;
+  font-size: 8px;
+  color: #efa1a5;
+  background: rgb(84 26 32 / 30%);
+}
+
+.component-context-menu > button:hover {
+  border-color: var(--danger);
+  color: #ffd4d6;
+  background: rgb(111 30 40 / 48%);
+}
+
+.component-context-menu > button i {
+  font:
+    normal 500 15px/0.8 "JetBrains Mono",
+    monospace;
+  color: var(--danger);
 }
 
 .placement-state {

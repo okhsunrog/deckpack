@@ -1,6 +1,6 @@
 import { Line, OrbitControls, RoundedBox, Text, TransformControls } from "@react-three/drei";
 import { Canvas, type ThreeEvent, useLoader, useThree } from "@react-three/fiber";
-import { Suspense, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   BoxGeometry,
   Color,
@@ -38,6 +38,7 @@ interface PlannerSceneProps {
   selectedComponentId?: string;
   onSelectComponent: (id: string | undefined) => void;
   onMoveComponent: (id: string, position: [number, number]) => void;
+  onRemoveComponent: (id: string) => void;
   serviceReservations: ServiceReservation[];
   onUpdateService: (id: string, patch: Partial<ServiceReservation>) => void;
 }
@@ -451,6 +452,7 @@ function ComponentObjects({
   evaluation,
   selectedId,
   onPointerDown,
+  onContextMenu,
 }: {
   enclosure: EnclosureSpec;
   components: ComponentPlacement[];
@@ -458,6 +460,7 @@ function ComponentObjects({
   evaluation?: WorkspaceEvaluation;
   selectedId?: string;
   onPointerDown: (event: ThreeEvent<PointerEvent>, id: string) => void;
+  onContextMenu: (event: ThreeEvent<MouseEvent>, id: string) => void;
 }) {
   return components.map((component) => {
     const box = componentBox(component, enclosure);
@@ -483,6 +486,7 @@ function ComponentObjects({
           position={center}
           rotation={[0, 0, rotationZ]}
           onPointerDown={(event) => onPointerDown(event, component.id)}
+          onContextMenu={(event) => onContextMenu(event, component.id)}
         >
           <Suspense
             fallback={
@@ -542,6 +546,8 @@ interface SceneContentsProps extends PlannerSceneProps {
   selectedKeepOutId?: string;
   keepOutTool: KeepOutTool;
   onSelectKeepOut: (id: string | undefined) => void;
+  onOpenComponentMenu: (id: string, position: [number, number]) => void;
+  onCloseComponentMenu: () => void;
 }
 
 function SceneContents(props: SceneContentsProps) {
@@ -550,14 +556,28 @@ function SceneContents(props: SceneContentsProps) {
   const floorZ = -enclosure.dimensionsMm.height / 2 + 0.01;
   const startDrag = (event: ThreeEvent<PointerEvent>, id: string) => {
     event.stopPropagation();
+    if (event.button !== 0) return;
     const placement = props.components.find((component) => component.id === id);
     if (!placement) return;
+    props.onCloseComponentMenu();
     props.onSelectKeepOut(undefined);
     props.onSelectComponent(id);
     setDragging({
       id,
       offset: [placement.position[0] - event.point.x, placement.position[1] - event.point.y],
     });
+  };
+  const openComponentMenu = (event: ThreeEvent<MouseEvent>, id: string) => {
+    event.stopPropagation();
+    event.nativeEvent.preventDefault();
+    const nativeEvent = event.nativeEvent;
+    const canvas = nativeEvent.target as HTMLCanvasElement;
+    const bounds = canvas.getBoundingClientRect();
+    const x = Math.max(8, Math.min(bounds.width - 188, nativeEvent.clientX - bounds.left));
+    const y = Math.max(8, Math.min(bounds.height - 94, nativeEvent.clientY - bounds.top));
+    props.onSelectKeepOut(undefined);
+    props.onSelectComponent(id);
+    props.onOpenComponentMenu(id, [x, y]);
   };
   const moveDrag = (event: ThreeEvent<PointerEvent>) => {
     if (!dragging) return;
@@ -637,6 +657,7 @@ function SceneContents(props: SceneContentsProps) {
         evaluation={props.evaluation}
         selectedId={props.selectedComponentId}
         onPointerDown={startDrag}
+        onContextMenu={openComponentMenu}
       />
       <mesh
         position={[0, 0, floorZ]}
@@ -646,6 +667,7 @@ function SceneContents(props: SceneContentsProps) {
         onPointerMissed={() => {
           props.onSelectComponent(undefined);
           props.onSelectKeepOut(undefined);
+          props.onCloseComponentMenu();
         }}
       >
         <planeGeometry
@@ -673,9 +695,43 @@ function SceneContents(props: SceneContentsProps) {
 export function PlannerScene(props: PlannerSceneProps) {
   const [selectedKeepOutId, setSelectedKeepOutId] = useState<string>();
   const [keepOutTool, setKeepOutTool] = useState<KeepOutTool>("translate");
+  const componentMenuRef = useRef<HTMLDivElement>(null);
+  const [componentMenu, setComponentMenu] = useState<{
+    id: string;
+    position: [number, number];
+  }>();
   const selectedReservation = props.serviceReservations.find(
     (reservation) => reservation.id === selectedKeepOutId && reservation.enabled,
   );
+  const menuComponent = componentMenu
+    ? props.components.find((component) => component.id === componentMenu.id)
+    : undefined;
+  const menuSpec = menuComponent
+    ? props.componentSpecs.find((spec) => spec.id === menuComponent.componentId)
+    : undefined;
+
+  useEffect(() => {
+    if (componentMenu && (!menuComponent || props.selectedComponentId !== componentMenu.id)) {
+      setComponentMenu(undefined);
+    }
+  }, [componentMenu, menuComponent, props.selectedComponentId]);
+
+  useEffect(() => {
+    if (!componentMenu) return;
+    const closeOnPointerDown = (event: PointerEvent) => {
+      if (componentMenuRef.current?.contains(event.target as Node)) return;
+      setComponentMenu(undefined);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setComponentMenu(undefined);
+    };
+    window.addEventListener("pointerdown", closeOnPointerDown);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("pointerdown", closeOnPointerDown);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [componentMenu]);
 
   return (
     <>
@@ -684,14 +740,42 @@ export function PlannerScene(props: PlannerSceneProps) {
         dpr={[1, 1.75]}
         camera={{ fov: 35, near: 1, far: 4500 }}
         gl={{ antialias: true, alpha: false }}
+        onContextMenu={(event) => event.preventDefault()}
       >
         <SceneContents
           {...props}
           selectedKeepOutId={selectedKeepOutId}
           keepOutTool={keepOutTool}
           onSelectKeepOut={setSelectedKeepOutId}
+          onOpenComponentMenu={(id, position) => setComponentMenu({ id, position })}
+          onCloseComponentMenu={() => setComponentMenu(undefined)}
         />
       </Canvas>
+      {componentMenu && menuComponent && (
+        <div
+          ref={componentMenuRef}
+          className="component-context-menu"
+          role="menu"
+          aria-label={`Действия с ${menuSpec?.model ?? "объектом"}`}
+          style={{ left: componentMenu.position[0], top: componentMenu.position[1] }}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <span>ВЫБРАН ОБЪЕКТ</span>
+          <b>{menuSpec?.model ?? "Компонент"}</b>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              props.onRemoveComponent(componentMenu.id);
+              setComponentMenu(undefined);
+            }}
+          >
+            <i aria-hidden="true">×</i>
+            Удалить объект
+            <kbd>Del</kbd>
+          </button>
+        </div>
+      )}
       {selectedReservation && (
         <div className="keepout-editor" role="toolbar" aria-label="Редактирование keep-out">
           <div>

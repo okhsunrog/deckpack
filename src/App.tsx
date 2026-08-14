@@ -33,6 +33,7 @@ function App() {
   const setSelectedPlanId = usePlannerStore((state) => state.setSelectedPlanId);
   const setSelectedComponentId = usePlannerStore((state) => state.setSelectedComponentId);
   const updateComponent = usePlannerStore((state) => state.updateComponent);
+  const removeComponent = usePlannerStore((state) => state.removeComponent);
   const setService = usePlannerStore((state) => state.setService);
   const resetProject = usePlannerStore((state) => state.resetProject);
   const cell = getCell(config.pack.cellId);
@@ -44,6 +45,25 @@ function App() {
       setSelectedPlanId(selectedPlan.id);
     }
   }, [loading, selectedPlan, selectedPlanId, setSelectedPlanId]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      const editingText =
+        target instanceof HTMLElement &&
+        (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+      if (editingText) return;
+      if (event.key === "Escape") {
+        setSelectedComponentId(undefined);
+        return;
+      }
+      if (!selectedComponentId || (event.key !== "Delete" && event.key !== "Backspace")) return;
+      event.preventDefault();
+      removeComponent(selectedComponentId);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [removeComponent, selectedComponentId, setSelectedComponentId]);
 
   const evaluation = useMemo(
     () =>
@@ -127,6 +147,7 @@ function App() {
               selectedComponentId={selectedComponentId}
               onSelectComponent={setSelectedComponentId}
               onMoveComponent={(id, position) => updateComponent(id, { position })}
+              onRemoveComponent={removeComponent}
               serviceReservations={activeServiceReservations(config.pack)}
               onUpdateService={setService}
             />
@@ -149,7 +170,7 @@ function App() {
               )}
             </div>
             <div className="scene-help">
-              ЛКМ: выбрать / перетащить · ПКМ: панорама · колесо: масштаб · drag: вращение
+              ЛКМ: выбрать / перетащить · ПКМ по объекту: меню · Delete: удалить · колесо: масштаб
             </div>
             <div className={`scene-status ${evaluation?.hasCollision ? "invalid" : ""}`}>
               <span />
