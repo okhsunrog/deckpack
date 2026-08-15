@@ -315,20 +315,33 @@ function HolderObjects({
     }, [plan, cell, toleranceStack]),
   );
   return (
-    <mesh geometry={geometry}>
-      <meshStandardMaterial
-        color="#e0b964"
-        emissive="#5c451a"
-        emissiveIntensity={0.3}
-        roughness={0.5}
-        metalness={0.05}
-        side={DoubleSide}
-      />
-    </mesh>
+    <group>
+      <mesh geometry={geometry}>
+        <meshStandardMaterial
+          color="#e0b964"
+          emissive="#5c451a"
+          emissiveIntensity={0.3}
+          roughness={0.5}
+          metalness={0.05}
+          side={DoubleSide}
+        />
+      </mesh>
+      {/* X-ray pass: the parts hidden behind cells stay faintly readable. */}
+      <mesh geometry={geometry} renderOrder={40}>
+        <meshBasicMaterial
+          color="#e0b964"
+          transparent
+          opacity={0.16}
+          depthTest={false}
+          depthWrite={false}
+          side={DoubleSide}
+        />
+      </mesh>
+    </group>
   );
 }
 
-function CellInstances({ plan, ghosted }: { plan: PackPlan; ghosted: boolean }) {
+function CellInstances({ plan }: { plan: PackPlan }) {
   const meshRef = useRef<InstancedMesh>(null);
   const diameter = Math.min(...plan.cellSizeMm);
   const height = Math.max(...plan.cellSizeMm);
@@ -336,19 +349,7 @@ function CellInstances({ plan, ghosted }: { plan: PackPlan; ghosted: boolean }) 
     useMemo(() => new CylinderGeometry(diameter / 2, diameter / 2, height, 20), [diameter, height]),
   );
   const material = useDisposable(
-    useMemo(
-      () =>
-        new MeshStandardMaterial({
-          roughness: 0.48,
-          metalness: 0.16,
-          // While the holder is displayed the cells become see-through shells
-          // drawn over it, so the combs stay readable behind them.
-          transparent: ghosted,
-          opacity: ghosted ? 0.42 : 1,
-          depthWrite: !ghosted,
-        }),
-      [ghosted],
-    ),
+    useMemo(() => new MeshStandardMaterial({ roughness: 0.48, metalness: 0.16 }), []),
   );
 
   useLayoutEffect(() => {
@@ -892,7 +893,7 @@ function SceneContents(props: SceneContentsProps) {
       {plan && (
         <>
           <BoxObject box={plan.blocks[0].envelope} color="#d99a46" opacity={0.06} />
-          <CellInstances plan={plan} ghosted={props.showHolders && plan.orientation !== "z"} />
+          <CellInstances plan={plan} />
           {props.showHolders && plan.orientation !== "z" && (
             <HolderObjects plan={plan} cell={props.cell} toleranceStack={props.toleranceStack} />
           )}
