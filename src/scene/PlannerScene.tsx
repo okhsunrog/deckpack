@@ -295,16 +295,18 @@ function HolderObjects({
   plan,
   cell,
   toleranceStack,
+  enclosure,
 }: {
   plan: PackPlan;
   cell: CellSpec;
   toleranceStack: ToleranceLayer[];
+  enclosure: EnclosureSpec;
 }) {
   const geometry = useDisposable(
     useMemo(() => {
       const result = new BufferGeometry();
       if (plan.orientation === "z") return result;
-      const layout = computeHolderPieces(plan, cell, toleranceStack);
+      const layout = computeHolderPieces(plan, cell, toleranceStack, enclosure);
       const positions: number[] = [];
       for (const piece of layout.pieces) {
         positions.push(...assembledPieceTriangles(piece, layout));
@@ -312,7 +314,7 @@ function HolderObjects({
       result.setAttribute("position", new Float32BufferAttribute(positions, 3));
       result.computeVertexNormals();
       return result;
-    }, [plan, cell, toleranceStack]),
+    }, [plan, cell, toleranceStack, enclosure]),
   );
   return (
     <group>
@@ -895,7 +897,12 @@ function SceneContents(props: SceneContentsProps) {
           <BoxObject box={plan.blocks[0].envelope} color="#d99a46" opacity={0.06} />
           <CellInstances plan={plan} />
           {props.showHolders && plan.orientation !== "z" && (
-            <HolderObjects plan={plan} cell={props.cell} toleranceStack={props.toleranceStack} />
+            <HolderObjects
+              plan={plan}
+              cell={props.cell}
+              toleranceStack={props.toleranceStack}
+              enclosure={enclosure}
+            />
           )}
           {plan.serviceVolumes.map((volume) => {
             const reservation = props.serviceReservations.find((item) => item.id === volume.id);

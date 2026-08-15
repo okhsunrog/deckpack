@@ -36,7 +36,12 @@ function exportProject() {
 function exportHolder(plan: PackPlan, cell: CellSpec) {
   const state = usePlannerStore.getState();
   try {
-    const build = generateHolder(plan, cell, state.config.pack.toleranceStack);
+    const build = generateHolder(
+      plan,
+      cell,
+      state.config.pack.toleranceStack,
+      state.config.enclosure,
+    );
     const thinnest = Math.min(...build.pieces.map((piece) => piece.minWallMm));
     download(
       new Blob([build.stl], { type: "model/stl" }),

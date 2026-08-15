@@ -1,4 +1,5 @@
-import type { CellSpec, PackPlan, ToleranceLayer, Vec3 } from "./types";
+import { availableDepthForBox } from "./geometry";
+import type { Box3D, CellSpec, EnclosureSpec, PackPlan, ToleranceLayer, Vec3 } from "./types";
 
 /**
  * Analytic cell-holder generator: builds printable wave combs from the exact
@@ -99,6 +100,7 @@ export function computeHolderPieces(
   plan: PackPlan,
   cell: CellSpec,
   toleranceStack: ToleranceLayer[],
+  enclosure: EnclosureSpec,
   options: HolderOptions = DEFAULT_HOLDER_OPTIONS,
 ): HolderPieces {
   if (plan.orientation === "z") {
@@ -107,7 +109,6 @@ export function computeHolderPieces(
   const axialIndex = plan.orientation === "x" ? 0 : 1;
   const lateralIndex = axialIndex === 0 ? 1 : 0;
   const radial = sumTolerance(toleranceStack, "radial");
-  const base = Math.max(0.8, sumTolerance(toleranceStack, "all-faces"));
   const bore = cell.sleevedDiameterMm / 2 + radial + options.clearanceMm;
   const stripLength = cell.sleevedHeightMm - 2 * options.terminalMarginMm;
 
@@ -134,21 +135,42 @@ export function computeHolderPieces(
     const tMin = Math.min(...lateralAll) - bore - 1.2;
     const tMax = Math.max(...lateralAll) + bore + 1.2;
 
-    // Bottom cradle: flat base under the lowest layer.
+    // Bottom cradle: the underside follows the enclosure floor under the
+    // strip, so the piece sits flush on ramps and clears the seam ridge while
+    // filling any gap down to the deep floor.
     const bottomLayer = layers[0];
-    const cradleBottom = Math.min(...bottomLayer.map((d) => d.z)) - bore - base;
+    const cradle = waveProfile(
+      -enclosure.dimensionsMm.height / 2,
+      Math.min(...bottomLayer.map((d) => d.z)),
+      [],
+      bottomLayer,
+      bore,
+      tMin,
+      tMax,
+      options.sampleStepMm,
+    );
+    const topZ = enclosure.dimensionsMm.height / 2;
+    const axialLo = rowCenter - stripLength / 2;
+    const axialHi = rowCenter + stripLength / 2;
+    for (let i = 0; i < cradle.t.length; i += 1) {
+      const t = cradle.t[i];
+      const probe: Box3D =
+        axialIndex === 0
+          ? { min: [axialLo, t - 0.25, 0], max: [axialHi, t + 0.25, 0] }
+          : { min: [t - 0.25, axialLo, 0], max: [t + 0.25, axialHi, 0] };
+      const floorZ = topZ - availableDepthForBox(enclosure, probe);
+      cradle.bottom[i] = Math.min(Math.max(cradle.bottom[i], floorZ), cradle.top[i]);
+    }
+    // Trim the ends where the rising case wall leaves no room for material.
+    let first = 0;
+    let last = cradle.t.length - 1;
+    while (first < last && cradle.top[first] - cradle.bottom[first] < 0.05) first += 1;
+    while (last > first && cradle.top[last] - cradle.bottom[last] < 0.05) last -= 1;
     pieces.push({
       label: `cradle-row${rowIndex + 1}`,
-      ...waveProfile(
-        cradleBottom,
-        Math.min(...bottomLayer.map((d) => d.z)),
-        [],
-        bottomLayer,
-        bore,
-        tMin,
-        tMax,
-        options.sampleStepMm,
-      ),
+      t: cradle.t.slice(first, last + 1),
+      top: cradle.top.slice(first, last + 1),
+      bottom: cradle.bottom.slice(first, last + 1),
       lengthMm: stripLength,
       axialCenterMm: rowCenter,
     });
@@ -182,9 +204,13 @@ export function generateHolder(
   plan: PackPlan,
   cell: CellSpec,
   toleranceStack: ToleranceLayer[],
+  enclosure: EnclosureSpec,
   options: HolderOptions = DEFAULT_HOLDER_OPTIONS,
 ): HolderBuild {
-  return buildStl(computeHolderPieces(plan, cell, toleranceStack, options).pieces, options);
+  return buildStl(
+    computeHolderPieces(plan, cell, toleranceStack, enclosure, options).pieces,
+    options,
+  );
 }
 
 /**
