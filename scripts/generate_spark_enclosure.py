@@ -65,21 +65,40 @@ def load_assembly() -> tuple[trimesh.Trimesh, float, float]:
 def flatten_seam_ridge(
     assembly: trimesh.Trimesh, center_mesh_x: float, center_mesh_y: float
 ) -> None:
-    """Collapse the seam reinforcement band on the tub floor into the floor
-    plane (display geometry only; the depth map is patched separately so the
-    rounded corners are handled by neighbour interpolation)."""
-    vertices = assembly.vertices.copy()
+    """Remove the seam reinforcement band everywhere (floor, walls, corners)
+    by snapping every band vertex onto the case cross-section taken just
+    outside the band: the mid-body is prismatic, so the neighbour profile is
+    the correct monolithic-carbon shape. Display geometry only; the depth map
+    is patched separately."""
+    from scipy.spatial import cKDTree
+
     y0 = SEAM_BAND_APP_X[0] + center_mesh_y
     y1 = SEAM_BAND_APP_X[1] + center_mesh_y
-    in_band = (
-        (vertices[:, 1] > y0)
-        & (vertices[:, 1] < y1)
-        & (np.abs(vertices[:, 0] - center_mesh_x) < 71)
-        & (vertices[:, 2] > 44.5)
-        & (vertices[:, 2] < 47.99)
+    references = []
+    for plane_y in (y0 - 2.0, y1 + 2.0):
+        section = assembly.section(
+            plane_origin=[0.0, plane_y, 0.0], plane_normal=[0.0, 1.0, 0.0]
+        )
+        if section is None:
+            raise RuntimeError("Seam reference cross-section is empty")
+        profile = np.vstack(section.discrete)
+        references.append((plane_y, profile, cKDTree(profile[:, [0, 2]])))
+    vertices = assembly.vertices.copy()
+    selected = np.where((vertices[:, 1] > y0) & (vertices[:, 1] < y1))[0]
+    coords = vertices[selected][:, [0, 2]]
+    (ya, profile_a, tree_a), (yb, profile_b, tree_b) = references
+    dist_a, near_a = tree_a.query(coords)
+    dist_b, near_b = tree_b.query(coords)
+    # Blend the two neighbour profiles so the case taper is preserved.
+    t = (vertices[selected, 1] - ya) / (yb - ya)
+    blended = (
+        profile_a[near_a][:, [0, 2]] * (1 - t)[:, None] + profile_b[near_b][:, [0, 2]] * t[:, None]
     )
-    vertices[in_band, 2] = 48.0
+    off_profile = np.minimum(dist_a, dist_b) > 0.25
+    vertices[selected[off_profile], 0] = blended[off_profile, 0]
+    vertices[selected[off_profile], 2] = blended[off_profile, 1]
     assembly.vertices = vertices
+    _ = center_mesh_x  # profile snapping needs no lateral windowing
 
 
 def export_display_mesh(
