@@ -96,6 +96,23 @@ export interface HolderBuild {
   stl: ArrayBuffer;
 }
 
+/** Drop degenerate zero-thickness columns at both ends of a profile. */
+function trimEmptyEnds(profile: { t: number[]; top: number[]; bottom: number[] }): {
+  t: number[];
+  top: number[];
+  bottom: number[];
+} {
+  let first = 0;
+  let last = profile.t.length - 1;
+  while (first < last && profile.top[first] - profile.bottom[first] < 0.05) first += 1;
+  while (last > first && profile.top[last] - profile.bottom[last] < 0.05) last -= 1;
+  return {
+    t: profile.t.slice(first, last + 1),
+    top: profile.top.slice(first, last + 1),
+    bottom: profile.bottom.slice(first, last + 1),
+  };
+}
+
 export function computeHolderPieces(
   plan: PackPlan,
   cell: CellSpec,
@@ -161,16 +178,9 @@ export function computeHolderPieces(
       const floorZ = topZ - availableDepthForBox(enclosure, probe);
       cradle.bottom[i] = Math.min(Math.max(cradle.bottom[i], floorZ), cradle.top[i]);
     }
-    // Trim the ends where the rising case wall leaves no room for material.
-    let first = 0;
-    let last = cradle.t.length - 1;
-    while (first < last && cradle.top[first] - cradle.bottom[first] < 0.05) first += 1;
-    while (last > first && cradle.top[last] - cradle.bottom[last] < 0.05) last -= 1;
     pieces.push({
       label: `cradle-row${rowIndex + 1}`,
-      t: cradle.t.slice(first, last + 1),
-      top: cradle.top.slice(first, last + 1),
-      bottom: cradle.bottom.slice(first, last + 1),
+      ...trimEmptyEnds(cradle),
       lengthMm: stripLength,
       axialCenterMm: rowCenter,
     });
@@ -179,18 +189,35 @@ export function computeHolderPieces(
     for (let index = 0; index + 1 < layers.length; index += 1) {
       const lower = layers[index];
       const upper = layers[index + 1];
+      const spacer = waveProfile(
+        Math.min(...lower.map((d) => d.z)),
+        Math.max(...upper.map((d) => d.z)),
+        lower,
+        upper,
+        bore,
+        tMin,
+        tMax,
+        options.sampleStepMm,
+      );
+      // The staggered shift leaves each end with cells on one side only.
+      // Solid slab there would hold nothing, so cap it to a thin web that
+      // follows the existing arc instead.
+      const webMm = 2.5;
+      for (let i = 0; i < spacer.t.length; i += 1) {
+        const t = spacer.t[i];
+        const nearUpper = upper.some((disc) => Math.abs(t - disc.center) < bore + 0.6);
+        const nearLower = lower.some((disc) => Math.abs(t - disc.center) < bore + 0.6);
+        if (!nearUpper && !nearLower) {
+          spacer.top[i] = spacer.bottom[i];
+        } else if (!nearUpper) {
+          spacer.top[i] = Math.min(spacer.top[i], spacer.bottom[i] + webMm);
+        } else if (!nearLower) {
+          spacer.bottom[i] = Math.max(spacer.bottom[i], spacer.top[i] - webMm);
+        }
+      }
       pieces.push({
         label: `spacer-row${rowIndex + 1}-L${index + 1}${index + 2}`,
-        ...waveProfile(
-          Math.min(...lower.map((d) => d.z)),
-          Math.max(...upper.map((d) => d.z)),
-          lower,
-          upper,
-          bore,
-          tMin,
-          tMax,
-          options.sampleStepMm,
-        ),
+        ...trimEmptyEnds(spacer),
         lengthMm: stripLength,
         axialCenterMm: rowCenter,
       });
