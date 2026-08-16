@@ -334,6 +334,8 @@ function profilePlacements(request: ProfilePlacementRequest): {
     halfLengthMm: request.cylinderHalfLengthMm,
   });
 
+  let nearMissX: number | undefined;
+  let nearMissOverflow = Infinity;
   const evaluate = (x: number): { x: number; zOffset: number } | undefined => {
     let zOffset = -Infinity;
     for (const cell of bottomCells) {
@@ -348,7 +350,16 @@ function profilePlacements(request: ProfilePlacementRequest): {
       if (!Number.isFinite(minCenterZ)) return undefined;
       zOffset = Math.max(zOffset, minCenterZ - cell[2]);
     }
-    if (highestLocalZ + zOffset > topLimitZ + EPSILON) return undefined;
+    const overflow = highestLocalZ + zOffset - topLimitZ;
+    if (overflow > EPSILON) {
+      // Remember the least-bad spot: a feasibility window narrower than the
+      // scan step hides between grid points and is recovered by refining here.
+      if (overflow < nearMissOverflow) {
+        nearMissOverflow = overflow;
+        nearMissX = x;
+      }
+      return undefined;
+    }
     const servicesFit = request.localServiceBoxes.every((box) =>
       enclosureContainmentKernel.contains(spec, translateBox(box, [x, yOffset, zOffset])),
     );
@@ -360,6 +371,17 @@ function profilePlacements(request: ProfilePlacementRequest): {
   for (const x of scanned) {
     const candidate = evaluate(x);
     if (candidate) feasible.push(candidate);
+  }
+  if (feasible.length === 0 && nearMissX !== undefined) {
+    for (
+      let x = nearMissX - PROFILE_PLACEMENT_STEP_MM;
+      x <= nearMissX + PROFILE_PLACEMENT_STEP_MM;
+      x += 0.25
+    ) {
+      if (x <= tailX || x >= noseX) continue;
+      const candidate = evaluate(x);
+      if (candidate) feasible.push(candidate);
+    }
   }
   if (feasible.length === 0) return { placements: [], scannedCount: scanned.length };
 
