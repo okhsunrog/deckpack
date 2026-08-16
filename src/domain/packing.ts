@@ -35,6 +35,8 @@ const AXES: Axis[] = ["x", "y", "z"];
 const AXIS_INDEX: Record<Axis, number> = { x: 0, y: 1, z: 2 };
 const ANCHORS: PlacementAnchor[] = ["tail", "center", "nose"];
 const PROFILE_PLACEMENT_STEP_MM = 2;
+const SLIDE_STEP_MM = 0.25;
+const SLIDE_MAX_MM = 30;
 const HEX_ROW_FACTOR = Math.sqrt(3) / 2;
 const EPSILON = 1e-6;
 const ROUTE_ORDERS: Vec3[] = [
@@ -307,6 +309,11 @@ export interface ProfilePlacement {
   yOffset: number;
   /** Final z of every local cell: the lattice drapes over the terrain. */
   cellZ: number[];
+  /**
+   * Per-cell x adjustment: an edge column that would push its upper
+   * neighbours up instead slides outward along the ramp until it clears them.
+   */
+  cellDX?: number[];
 }
 
 /**
@@ -340,15 +347,18 @@ function profilePlacements(request: ProfilePlacementRequest): {
   // Support pairs from the undraped lattice: an upper cell keeps at least its
   // original vertical spacing to every lower neighbour it actually rests on,
   // i.e. pairs at lattice touch distance - not farther diagonal neighbours.
-  const supports: Array<Array<{ lower: number; riseMm: number }>> = localCells.map(() => []);
+  const supports: Array<
+    Array<{ lower: number; riseMm: number; lateralMm: number; touchMm: number }>
+  > = localCells.map(() => []);
   for (let layer = 1; layer < layerCount; layer += 1) {
     for (const upper of byLayer[layer]) {
       for (const lower of byLayer[layer - 1]) {
         if (Math.abs(localCells[upper][axialIndex] - localCells[lower][axialIndex]) > 1) continue;
         const lateral = Math.abs(localCells[upper][lateralIndex] - localCells[lower][lateralIndex]);
         const rise = localCells[upper][2] - localCells[lower][2];
-        if (Math.hypot(lateral, rise) > request.supportDistanceMm) continue;
-        supports[upper].push({ lower, riseMm: rise });
+        const touch = Math.hypot(lateral, rise);
+        if (touch > request.supportDistanceMm) continue;
+        supports[upper].push({ lower, riseMm: rise, lateralMm: lateral, touchMm: touch });
       }
     }
   }
@@ -360,6 +370,104 @@ function profilePlacements(request: ProfilePlacementRequest): {
     radiusMm: request.cylinderRadiusMm,
     halfLengthMm: request.cylinderHalfLengthMm,
   });
+
+  const ownFloor = (index: number, x: number, shiftMm: number): number =>
+    minCylinderCenterZ(spec, {
+      centerXmm: localCells[index][0] + x + shiftMm,
+      centerYmm: localCells[index][1] + yOffset,
+      axis: orientation,
+      radiusMm: request.cylinderRadiusMm,
+      halfLengthMm: request.cylinderHalfLengthMm,
+    });
+
+  /**
+   * A bottom edge column pushed up by a ramp may instead slide outward along
+   * it: once its lateral distance to the upper row reaches the lattice touch
+   * distance the upper cells stay down, something the greedy drape cannot
+   * express. Only lattices whose stagger step runs along the deck can relax
+   * this way (a cylinder sliding along its own axis never clears its
+   * neighbours), and only when every affected upper cell keeps another
+   * support to rest on.
+   */
+  const slideEdgeColumns = (x: number, baseZ: number[]): { cellZ: number[]; dx: number[] } => {
+    const dx = new Array<number>(localCells.length).fill(0);
+    if (request.rigid || axialIndex === 0 || layerCount < 2) return { cellZ: baseZ, dx };
+    const cellZ = [...baseZ];
+    const bottom = byLayer[0];
+    for (const dir of [-1, 1] as const) {
+      const edgeX =
+        dir === -1
+          ? Math.min(...bottom.map((index) => localCells[index][0]))
+          : Math.max(...bottom.map((index) => localCells[index][0]));
+      const column = bottom.filter((index) => Math.abs(localCells[index][0] - edgeX) < 1e-6);
+      const columnSet = new Set(column);
+      const dependents: Array<{
+        upper: number;
+        lower: number;
+        lateralMm: number;
+        touchMm: number;
+      }> = [];
+      for (const upper of byLayer[1]) {
+        for (const pair of supports[upper]) {
+          if (!columnSet.has(pair.lower)) continue;
+          dependents.push({
+            upper,
+            lower: pair.lower,
+            lateralMm: pair.lateralMm,
+            touchMm: pair.touchMm,
+          });
+        }
+      }
+      if (dependents.length === 0) continue;
+      // An upper cell whose only support is the sliding column would drop
+      // into the vacated groove; keep the plain lift for that shape.
+      if (dependents.some((item) => supports[item.upper].length < 2)) continue;
+      const upperBase = new Map<number, number>();
+      for (const upper of new Set(dependents.map((item) => item.upper))) {
+        let base = ownFloor(upper, x, 0);
+        for (const pair of supports[upper]) {
+          if (!columnSet.has(pair.lower)) base = Math.max(base, cellZ[pair.lower] + pair.riseMm);
+        }
+        if (!Number.isFinite(base)) return { cellZ: baseZ, dx };
+        upperBase.set(upper, base);
+      }
+      const pushes = dependents.some(
+        (item) => cellZ[item.upper] > (upperBase.get(item.upper) ?? Infinity) + EPSILON,
+      );
+      if (!pushes) continue;
+      search: for (
+        let shift = SLIDE_STEP_MM;
+        shift <= SLIDE_MAX_MM + EPSILON;
+        shift += SLIDE_STEP_MM
+      ) {
+        const slidZ = new Map<number, number>();
+        for (const index of column) {
+          const floorZ = ownFloor(index, x, dir * shift);
+          if (!Number.isFinite(floorZ) || floorZ > topLimitZ) break search;
+          slidZ.set(index, floorZ);
+        }
+        let clears = true;
+        for (const item of dependents) {
+          const lateral = item.lateralMm + shift;
+          if (lateral >= item.touchMm) continue;
+          const rise = Math.sqrt(item.touchMm ** 2 - lateral ** 2);
+          const lowerZ = slidZ.get(item.lower) ?? -Infinity;
+          if (lowerZ + rise > (upperBase.get(item.upper) ?? -Infinity) + EPSILON) {
+            clears = false;
+            break;
+          }
+        }
+        if (!clears) continue;
+        for (const index of column) {
+          dx[index] = dir * shift;
+          cellZ[index] = slidZ.get(index)!;
+        }
+        for (const [upper, base] of upperBase) cellZ[upper] = base;
+        break;
+      }
+    }
+    return { cellZ, dx };
+  };
 
   const nearMisses: Array<{ x: number; overflow: number }> = [];
   let nearMissX: number | undefined;
@@ -487,7 +595,8 @@ function profilePlacements(request: ProfilePlacementRequest): {
     .sort(([a], [b]) => a - b)
     .map(([x, anchor]) => {
       const candidate = feasible.find((item) => item.x === x)!;
-      return { anchor, xOffset: x, yOffset, cellZ: candidate.cellZ };
+      const slid = slideEdgeColumns(x, candidate.cellZ);
+      return { anchor, xOffset: x, yOffset, cellZ: slid.cellZ, cellDX: slid.dx };
     });
   return { placements, scannedCount: scanned.length };
 }
@@ -773,7 +882,7 @@ export function enumeratePackPlans(request: EnumerationRequest): EnumerationResp
             for (const placement of placements) {
               const { anchor } = placement;
               const finalPositions: Vec3[] = allLocalCells.map((position, index) => [
-                position[0] + placement.xOffset,
+                position[0] + placement.xOffset + (placement.cellDX?.[index] ?? 0),
                 position[1] + placement.yOffset,
                 placement.cellZ[index],
               ]);

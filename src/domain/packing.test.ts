@@ -231,6 +231,21 @@ describe("Spark case enumeration", () => {
     expect(response.plans.some((plan) => plan.metrics.layerCount === 2)).toBe(true);
   });
 
+  it("slides a staggered edge column up the ramp instead of lifting the top row", () => {
+    // The pack is longer than the deep floor, so one bottom column must ride
+    // the tail ramp. Sliding it outward clears the nesting: the whole upper
+    // layer stays at its undisturbed height.
+    const slid = response.plans.filter((plan) => {
+      if (plan.packingMode !== "staggered") return false;
+      const bottom = plan.cells.filter((cell) => cell.layer === 0).map((cell) => cell.position[2]);
+      const upper = plan.cells.filter((cell) => cell.layer === 1).map((cell) => cell.position[2]);
+      const bottomRaised = Math.max(...bottom) - Math.min(...bottom) > 1;
+      const upperFlat = Math.max(...upper) - Math.min(...upper) < 1e-6;
+      return bottomRaised && upperFlat;
+    });
+    expect(slid.length).toBeGreaterThan(0);
+  });
+
   it("keeps brick layers flat: a ramp column may not push its tower up alone", () => {
     // Brick cells stack vertically, so draping a single column would lift one
     // top cell above the rest. Only staggered lattices settle per column; brick
