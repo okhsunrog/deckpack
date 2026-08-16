@@ -42,18 +42,12 @@ describe("Spark case geometry", () => {
     expect(availableDepthForBox(defaultConfig.enclosure, deepProbe)).toBe(48);
   });
 
-  it("keeps the seam reinforcement ridge at 2 mm and the rest of the floor flat", () => {
-    // The carbon shell keeps a ~6 mm wide 4 mm thick reinforcement band at the
-    // old two-part seam (x ≈ -24..-18): a 2 mm step above the 48 mm floor.
-    // Everything else across the deep tub must be full depth.
+  it("has a flat floor across the old two-part seam", () => {
+    // The physical carbon case is monolithic: the seam reinforcement remnant
+    // of the printable halves is flattened out of the generated assets.
     for (let x = -30; x <= 20; x += 1) {
       const probe = boxFromCenterSize([x, 0, 0], [1, 60, 0]);
-      const depth = availableDepthForBox(defaultConfig.enclosure, probe);
-      if (x >= -26 && x <= -16) {
-        expect(depth).toBeGreaterThanOrEqual(46);
-      } else {
-        expect(depth).toBe(48);
-      }
+      expect(availableDepthForBox(defaultConfig.enclosure, probe)).toBe(48);
     }
   });
 });

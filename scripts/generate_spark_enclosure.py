@@ -33,6 +33,10 @@ RAY_ORIGIN_Z_MM = -1.0
 INWARD_NORMAL_Z_LIMIT = -0.02
 RAY_BATCH_SIZE = 8_192
 JOINT_OVERLAP_MM = 5.0
+# The carbon shell model keeps a reinforcement remnant of the printable
+# two-part seam as a ~2 mm tall band across the floor. The physical carbon
+# case is monolithic and flat there, so the band is flattened out.
+SEAM_BAND_APP_X = (-27.0, -15.0)
 
 
 def load_assembly() -> tuple[trimesh.Trimesh, float, float]:
@@ -56,6 +60,26 @@ def load_assembly() -> tuple[trimesh.Trimesh, float, float]:
     center_mesh_x = float((assembly.bounds[0, 0] + assembly.bounds[1, 0]) / 2)
     center_mesh_y = float((assembly.bounds[0, 1] + assembly.bounds[1, 1]) / 2)
     return assembly, center_mesh_x, center_mesh_y
+
+
+def flatten_seam_ridge(
+    assembly: trimesh.Trimesh, center_mesh_x: float, center_mesh_y: float
+) -> None:
+    """Collapse the seam reinforcement band on the tub floor into the floor
+    plane (display geometry only; the depth map is patched separately so the
+    rounded corners are handled by neighbour interpolation)."""
+    vertices = assembly.vertices.copy()
+    y0 = SEAM_BAND_APP_X[0] + center_mesh_y
+    y1 = SEAM_BAND_APP_X[1] + center_mesh_y
+    in_band = (
+        (vertices[:, 1] > y0)
+        & (vertices[:, 1] < y1)
+        & (np.abs(vertices[:, 0] - center_mesh_x) < 71)
+        & (vertices[:, 2] > 44.5)
+        & (vertices[:, 2] < 47.99)
+    )
+    vertices[in_band, 2] = 48.0
+    assembly.vertices = vertices
 
 
 def export_display_mesh(
@@ -135,6 +159,20 @@ def extract_depth_map(
         ).astype(np.uint8)
         quantized[start:end][valid] = encoded
 
+    # Flatten the seam band in the map by raising it to the lower of its two
+    # lateral neighbours, so ramps, rounded corners and walls stay intact.
+    grid = quantized.reshape(rows, columns)
+    band_c0 = int(np.floor((SEAM_BAND_APP_X[0] - origin_x) / GRID_STEP_MM))
+    band_c1 = int(np.ceil((SEAM_BAND_APP_X[1] - origin_x) / GRID_STEP_MM))
+    left = max(0, band_c0 - 2)
+    right = min(columns - 1, band_c1 + 2)
+    for row in range(rows):
+        reference = min(grid[row, left], grid[row, right])
+        for column in range(band_c0, band_c1 + 1):
+            if grid[row, column] < reference:
+                grid[row, column] = reference
+    quantized = grid.ravel()
+
     decoded_depths = quantized.astype(np.float64) * DEPTH_QUANTIZATION_MM
     usable_volume = float(decoded_depths.sum() * GRID_STEP_MM * GRID_STEP_MM)
     valid_depths = decoded_depths[quantized > 0]
@@ -154,6 +192,7 @@ def extract_depth_map(
 
 def main() -> None:
     assembly, center_mesh_x, center_mesh_y = load_assembly()
+    flatten_seam_ridge(assembly, center_mesh_x, center_mesh_y)
     enclosure_height = float(assembly.bounds[1, 2] - assembly.bounds[0, 2])
     source_length = float(assembly.bounds[1, 1] - assembly.bounds[0, 1])
     source_width = float(assembly.bounds[1, 0] - assembly.bounds[0, 0])
