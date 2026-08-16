@@ -25,7 +25,14 @@ const toleranceLayerSchema = z.object({
   label: z.string(),
   kind: z.enum(["nickel", "fishpaper", "compound", "holder", "outer-wrap"]),
   scope: z.enum(["cell", "series-group", "pack-block"]),
-  application: z.enum(["radial", "axial-ends", "between-cells", "between-groups", "all-faces"]),
+  application: z.enum([
+    "radial",
+    "axial-ends",
+    "between-cells",
+    "between-layers",
+    "between-groups",
+    "all-faces",
+  ]),
   thicknessMm: z.number().nonnegative(),
 });
 
@@ -96,11 +103,29 @@ export function sanitizePersistedConfig(value: unknown): PlannerConfig | undefin
   }
   // Projects stored before the holder-wall layer existed: add it and move the
   // old default compound gap into the holder wall instead of stacking both.
-  if (!config.pack.toleranceStack.some((layer) => layer.kind === "holder")) {
+  if (!config.pack.toleranceStack.some((layer) => layer.application === "between-layers")) {
+    config.pack.toleranceStack.push({
+      id: "layer-lift",
+      label: "Подъём слоя (staggered)",
+      kind: "holder",
+      scope: "series-group",
+      application: "between-layers",
+      thicknessMm: 0,
+    });
+  }
+  if (
+    !config.pack.toleranceStack.some(
+      (layer) => layer.kind === "holder" && layer.application === "between-cells",
+    )
+  ) {
     const compound = config.pack.toleranceStack.find(
       (layer) => layer.application === "between-cells",
     );
     if (compound && Math.abs(compound.thicknessMm - 0.8) < 1e-9) compound.thicknessMm = 0.2;
+    const separator = config.pack.toleranceStack.find(
+      (layer) => layer.application === "between-groups",
+    );
+    if (separator && Math.abs(separator.thicknessMm - 0.5) < 1e-9) separator.thicknessMm = 1.4;
     config.pack.toleranceStack.push({
       id: "holder-wall",
       label: "Стенка холдера",

@@ -52,6 +52,7 @@ interface CompiledTolerances {
   radial: number;
   axialPerEnd: number;
   betweenCells: number;
+  betweenLayers: number;
   betweenGroups: number;
   outerWrap: number;
 }
@@ -103,6 +104,7 @@ function compileTolerances(stack: ToleranceLayer[]): CompiledTolerances {
     radial: sumTolerance(stack, "radial"),
     axialPerEnd: sumTolerance(stack, "axial-ends"),
     betweenCells: sumTolerance(stack, "between-cells"),
+    betweenLayers: sumTolerance(stack, "between-layers"),
     betweenGroups: sumTolerance(stack, "between-groups"),
     outerWrap: sumTolerance(stack, "all-faces"),
   };
@@ -142,7 +144,10 @@ function makeGroupTemplate(
         const grid: Vec3 = [x, y, z];
         const position: Vec3 = [x * pitch[0], y * pitch[1], z * pitch[2]];
         if (mode === "staggered" && rowAxis >= 0 && shiftAxis >= 0) {
-          position[rowAxis] = grid[rowAxis] * pitch[rowAxis] * (Math.sqrt(3) / 2);
+          // Hex nesting pitch, optionally relaxed vertically by the
+          // between-layers tolerance so holder walls can be thickened.
+          position[rowAxis] =
+            grid[rowAxis] * (pitch[rowAxis] * (Math.sqrt(3) / 2) + tolerances.betweenLayers);
           position[shiftAxis] += (grid[rowAxis] % 2) * pitch[shiftAxis] * 0.5;
         }
         centers.push(position);
@@ -568,7 +573,8 @@ export function enumeratePackPlans(request: EnumerationRequest): EnumerationResp
               ? {
                   rowAxis: rowAxisIndex,
                   shiftAxis: shiftAxisIndex,
-                  rowPitchMm: template.cellPitch[rowAxisIndex] * HEX_ROW_FACTOR,
+                  rowPitchMm:
+                    template.cellPitch[rowAxisIndex] * HEX_ROW_FACTOR + tolerance.betweenLayers,
                   shiftMm: template.cellPitch[shiftAxisIndex] / 2,
                 }
               : undefined;

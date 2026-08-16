@@ -62,12 +62,20 @@ export const defaultConfig: PlannerConfig = {
         thicknessMm: 1.2,
       },
       {
+        id: "layer-lift",
+        label: "Подъём слоя (staggered)",
+        kind: "holder",
+        scope: "series-group",
+        application: "between-layers",
+        thicknessMm: 0,
+      },
+      {
         id: "group-separator",
         label: "Group separator",
         kind: "fishpaper",
         scope: "series-group",
         application: "between-groups",
-        thicknessMm: 0.5,
+        thicknessMm: 1.4,
       },
       {
         id: "outer-wrap",

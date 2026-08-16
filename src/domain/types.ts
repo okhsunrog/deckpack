@@ -71,6 +71,7 @@ export type ToleranceApplication =
   | "radial"
   | "axial-ends"
   | "between-cells"
+  | "between-layers"
   | "between-groups"
   | "all-faces";
 
