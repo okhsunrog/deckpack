@@ -5,6 +5,7 @@ import {
   setWiringExitMode as updateWiringExitMode,
 } from "../domain/service-reservations";
 import { createSparkCaseEnclosure } from "../data/enclosures";
+import type { HolderStyle } from "../domain/holder";
 import { sanitizePersistedConfig, sanitizePersistedPlacements } from "./persisted-state";
 import type {
   ComponentPlacement,
@@ -103,6 +104,7 @@ interface PlannerState {
   selectedComponentId?: string;
   rightPanel: "variants" | "components";
   showHolders: boolean;
+  holderStyle: HolderStyle;
   setEnclosureKind: (kind: EnclosureSpec["kind"]) => void;
   setEnclosureDimension: (key: keyof Dimensions3D, value: number) => void;
   setPackField: <K extends keyof PackRequest>(key: K, value: PackRequest[K]) => void;
@@ -113,6 +115,7 @@ interface PlannerState {
   setSelectedComponentId: (id: string | undefined) => void;
   setRightPanel: (panel: "variants" | "components") => void;
   setShowHolders: (show: boolean) => void;
+  setHolderStyle: (style: HolderStyle) => void;
   addComponent: (spec: ComponentSpec) => void;
   updateComponent: (id: string, patch: Partial<ComponentPlacement>) => void;
   removeComponent: (id: string) => void;
@@ -130,6 +133,7 @@ export const usePlannerStore = create<PlannerState>()(
       placements: [],
       rightPanel: "variants",
       showHolders: true,
+      holderStyle: "full",
       setEnclosureKind: (kind) =>
         set((state) => {
           if (state.config.enclosure.kind === kind) return state;
@@ -201,6 +205,7 @@ export const usePlannerStore = create<PlannerState>()(
       setSelectedPlan: (selectedPlanId, selectedPlanKey) =>
         set({ selectedPlanId, selectedPlanKey }),
       setShowHolders: (showHolders) => set({ showHolders }),
+      setHolderStyle: (holderStyle) => set({ holderStyle }),
       setSelectedComponentId: (selectedComponentId) => set({ selectedComponentId }),
       setRightPanel: (rightPanel) => set({ rightPanel }),
       addComponent: (spec) =>
@@ -254,9 +259,10 @@ export const usePlannerStore = create<PlannerState>()(
       // changed, so a fresh project is safer than a partial migration.
       migrate: () => ({
         config: freshConfig(),
-        placements: [],
-        selectedPlanId: undefined,
-        selectedPlanKey: undefined,
+        placements: [] as ComponentPlacement[],
+        selectedPlanId: undefined as string | undefined,
+        selectedPlanKey: undefined as string | undefined,
+        holderStyle: "full" as HolderStyle,
       }),
       merge: (persisted, current) => {
         const stored = (persisted ?? {}) as Partial<{
@@ -264,6 +270,7 @@ export const usePlannerStore = create<PlannerState>()(
           placements: unknown;
           selectedPlanId: unknown;
           selectedPlanKey: unknown;
+          holderStyle: unknown;
         }>;
         const config = sanitizePersistedConfig(stored.config);
         const placements = sanitizePersistedPlacements(stored.placements);
@@ -275,6 +282,7 @@ export const usePlannerStore = create<PlannerState>()(
             typeof stored.selectedPlanId === "string" ? stored.selectedPlanId : undefined,
           selectedPlanKey:
             typeof stored.selectedPlanKey === "string" ? stored.selectedPlanKey : undefined,
+          holderStyle: stored.holderStyle === "edge" ? "edge" : "full",
         };
       },
       partialize: (state) => ({
@@ -282,6 +290,7 @@ export const usePlannerStore = create<PlannerState>()(
         placements: state.placements,
         selectedPlanId: state.selectedPlanId,
         selectedPlanKey: state.selectedPlanKey,
+        holderStyle: state.holderStyle,
       }),
     },
   ),

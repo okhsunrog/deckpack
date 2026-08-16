@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { getCell } from "../data/library";
 import { defaultConfig } from "../store/planner-store";
 import { availableDepthForBox } from "./geometry";
-import { computeHolderPieces, generateHolder } from "./holder";
+import { computeHolderPieces, DEFAULT_HOLDER_OPTIONS, generateHolder } from "./holder";
 import { enumeratePackPlans } from "./packing";
 
 describe("holder generator", () => {
@@ -32,6 +32,47 @@ describe("holder generator", () => {
     const total = build.pieces.reduce((sum, piece) => sum + piece.triangleCount, 0);
     expect(build.stl.byteLength).toBe(84 + total * 50);
     expect(new DataView(build.stl).getUint32(80, true)).toBe(total);
+  });
+
+  it("splits each belt into two edge bands in the edge style", () => {
+    const plan = plans.find(
+      (candidate) => candidate.packingMode === "staggered" && candidate.metrics.layerCount === 2,
+    )!;
+    const build = generateHolder(
+      plan,
+      cell,
+      defaultConfig.pack.toleranceStack,
+      defaultConfig.enclosure,
+      { ...DEFAULT_HOLDER_OPTIONS, style: "edge" },
+    );
+    // Two rows x (cradle + spacer) x two bands per strip.
+    expect(build.pieces).toHaveLength(8);
+    expect(build.pieces.filter((piece) => piece.label.startsWith("cradle"))).toHaveLength(4);
+    for (const piece of build.pieces) {
+      expect(piece.sizeMm[2]).toBeCloseTo(DEFAULT_HOLDER_OPTIONS.edgeStripWidthMm);
+      expect(piece.triangleCount).toBeGreaterThan(100);
+    }
+    // The bands sit inside the covered zone: outer edge at the terminal
+    // margin, so welding access is identical to the full belt.
+    const layout = computeHolderPieces(
+      plan,
+      cell,
+      defaultConfig.pack.toleranceStack,
+      defaultConfig.enclosure,
+      { ...DEFAULT_HOLDER_OPTIONS, style: "edge" },
+    );
+    const halfCovered = cell.sleevedHeightMm / 2 - DEFAULT_HOLDER_OPTIONS.terminalMarginMm;
+    const axialIndex = plan.orientation === "x" ? 0 : 1;
+    const rows = [...new Set(plan.cells.map((placed) => placed.position[axialIndex]))];
+    for (const piece of layout.pieces) {
+      const row = rows.reduce((best, candidate) =>
+        Math.abs(candidate - piece.axialCenterMm) < Math.abs(best - piece.axialCenterMm)
+          ? candidate
+          : best,
+      );
+      const outerEdge = Math.abs(piece.axialCenterMm - row) + piece.lengthMm / 2;
+      expect(outerEdge).toBeCloseTo(halfCovered, 5);
+    }
   });
 
   it("keeps a printable wall between nested staggered layers", () => {

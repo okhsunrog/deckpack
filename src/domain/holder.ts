@@ -9,6 +9,8 @@ import type { Box3D, CellSpec, EnclosureSpec, PackPlan, ToleranceLayer, Vec3 } f
  * wave profile lies in the XY plane and the cell-axis direction becomes Z, so
  * every wall prints vertically without supports.
  */
+export type HolderStyle = "full" | "edge";
+
 export interface HolderOptions {
   /** Extra radius on top of the reserved cell radius so cells drop in. */
   clearanceMm: number;
@@ -18,6 +20,14 @@ export interface HolderOptions {
   layoutGapMm: number;
   /** Profile sampling step along the lateral axis. */
   sampleStepMm: number;
+  /**
+   * "full" holds cells with one wide belt per row; "edge" grips only a narrow
+   * band near each cell end (like commercial modular holders), halving the
+   * plastic while leaving the terminals just as free.
+   */
+  style: HolderStyle;
+  /** Band width along the cell axis for the "edge" style. */
+  edgeStripWidthMm: number;
 }
 
 export const DEFAULT_HOLDER_OPTIONS: HolderOptions = {
@@ -25,6 +35,8 @@ export const DEFAULT_HOLDER_OPTIONS: HolderOptions = {
   terminalMarginMm: 7,
   layoutGapMm: 8,
   sampleStepMm: 0.25,
+  style: "full",
+  edgeStripWidthMm: 12,
 };
 
 export interface ProfilePiece {
@@ -151,81 +163,95 @@ export function computeHolderPieces(
     const tMin = Math.min(...lateralAll) - bore - 1.2;
     const tMax = Math.max(...lateralAll) + bore + 1.2;
 
-    // Bottom cradle: the underside follows the enclosure floor under the
-    // strip, so the piece sits flush on ramps and clears the seam ridge while
-    // filling any gap down to the deep floor.
-    const bottomLayer = layers[0];
-    const cradle = waveProfile(
-      -enclosure.dimensionsMm.height / 2,
-      Math.max(...bottomLayer.map((d) => d.z)),
-      [],
-      bottomLayer,
-      bore,
-      tMin,
-      tMax,
-      options.sampleStepMm,
-    );
-    const topZ = enclosure.dimensionsMm.height / 2;
-    const axialLo = rowCenter - stripLength / 2;
-    const axialHi = rowCenter + stripLength / 2;
-    for (let i = 0; i < cradle.t.length; i += 1) {
-      const t = cradle.t[i];
-      const probe: Box3D =
-        axialIndex === 0
-          ? { min: [axialLo, t - 0.25, 0], max: [axialHi, t + 0.25, 0] }
-          : { min: [t - 0.25, axialLo, 0], max: [t + 0.25, axialHi, 0] };
-      const floorZ = topZ - availableDepthForBox(enclosure, probe);
-      cradle.bottom[i] = Math.min(Math.max(cradle.bottom[i], floorZ), cradle.top[i]);
-    }
-    // Between draped columns of different heights the slab would rise to the
-    // tallest one; cap stretches without a nearby cell to a thin web instead.
-    for (let i = 0; i < cradle.t.length; i += 1) {
-      const near = bottomLayer.some((disc) => Math.abs(cradle.t[i] - disc.center) < bore + 0.6);
-      if (!near) cradle.top[i] = Math.min(cradle.top[i], cradle.bottom[i] + 2.5);
-    }
-    pieces.push({
-      label: `cradle-row${rowIndex + 1}`,
-      ...trimEmptyEnds(cradle),
-      lengthMm: stripLength,
-      axialCenterMm: rowCenter,
-    });
+    // One wide belt per row, or two narrow bands gripping the cells near
+    // their ends like commercial modular holders.
+    const edgeWidth = Math.min(options.edgeStripWidthMm, stripLength / 2);
+    const bandOffset = stripLength / 2 - edgeWidth / 2;
+    const segments: Array<{ center: number; length: number; suffix: string }> =
+      options.style === "edge" && stripLength > options.edgeStripWidthMm * 2
+        ? [
+            { center: rowCenter - bandOffset, length: edgeWidth, suffix: "-a" },
+            { center: rowCenter + bandOffset, length: edgeWidth, suffix: "-b" },
+          ]
+        : [{ center: rowCenter, length: stripLength, suffix: "" }];
 
-    // Interlayer spacers between each pair of adjacent layers.
-    for (let index = 0; index + 1 < layers.length; index += 1) {
-      const lower = layers[index];
-      const upper = layers[index + 1];
-      const spacer = waveProfile(
-        Math.min(...lower.map((d) => d.z)),
-        Math.max(...upper.map((d) => d.z)),
-        lower,
-        upper,
+    for (const segment of segments) {
+      // Bottom cradle: the underside follows the enclosure floor under the
+      // strip, so the piece sits flush on ramps and clears the seam ridge
+      // while filling any gap down to the deep floor.
+      const bottomLayer = layers[0];
+      const cradle = waveProfile(
+        -enclosure.dimensionsMm.height / 2,
+        Math.max(...bottomLayer.map((d) => d.z)),
+        [],
+        bottomLayer,
         bore,
         tMin,
         tMax,
         options.sampleStepMm,
       );
-      // The staggered shift leaves each end with cells on one side only.
-      // Solid slab there would hold nothing, so cap it to a thin web that
-      // follows the existing arc instead.
-      const webMm = 2.5;
-      for (let i = 0; i < spacer.t.length; i += 1) {
-        const t = spacer.t[i];
-        const nearUpper = upper.some((disc) => Math.abs(t - disc.center) < bore + 0.6);
-        const nearLower = lower.some((disc) => Math.abs(t - disc.center) < bore + 0.6);
-        if (!nearUpper && !nearLower) {
-          spacer.top[i] = spacer.bottom[i];
-        } else if (!nearUpper) {
-          spacer.top[i] = Math.min(spacer.top[i], spacer.bottom[i] + webMm);
-        } else if (!nearLower) {
-          spacer.bottom[i] = Math.max(spacer.bottom[i], spacer.top[i] - webMm);
-        }
+      const topZ = enclosure.dimensionsMm.height / 2;
+      const axialLo = segment.center - segment.length / 2;
+      const axialHi = segment.center + segment.length / 2;
+      for (let i = 0; i < cradle.t.length; i += 1) {
+        const t = cradle.t[i];
+        const probe: Box3D =
+          axialIndex === 0
+            ? { min: [axialLo, t - 0.25, 0], max: [axialHi, t + 0.25, 0] }
+            : { min: [t - 0.25, axialLo, 0], max: [t + 0.25, axialHi, 0] };
+        const floorZ = topZ - availableDepthForBox(enclosure, probe);
+        cradle.bottom[i] = Math.min(Math.max(cradle.bottom[i], floorZ), cradle.top[i]);
+      }
+      // Between draped columns of different heights the slab would rise to the
+      // tallest one; cap stretches without a nearby cell to a thin web instead.
+      for (let i = 0; i < cradle.t.length; i += 1) {
+        const near = bottomLayer.some((disc) => Math.abs(cradle.t[i] - disc.center) < bore + 0.6);
+        if (!near) cradle.top[i] = Math.min(cradle.top[i], cradle.bottom[i] + 2.5);
       }
       pieces.push({
-        label: `spacer-row${rowIndex + 1}-L${index + 1}${index + 2}`,
-        ...trimEmptyEnds(spacer),
-        lengthMm: stripLength,
-        axialCenterMm: rowCenter,
+        label: `cradle-row${rowIndex + 1}${segment.suffix}`,
+        ...trimEmptyEnds(cradle),
+        lengthMm: segment.length,
+        axialCenterMm: segment.center,
       });
+
+      // Interlayer spacers between each pair of adjacent layers.
+      for (let index = 0; index + 1 < layers.length; index += 1) {
+        const lower = layers[index];
+        const upper = layers[index + 1];
+        const spacer = waveProfile(
+          Math.min(...lower.map((d) => d.z)),
+          Math.max(...upper.map((d) => d.z)),
+          lower,
+          upper,
+          bore,
+          tMin,
+          tMax,
+          options.sampleStepMm,
+        );
+        // The staggered shift leaves each end with cells on one side only.
+        // Solid slab there would hold nothing, so cap it to a thin web that
+        // follows the existing arc instead.
+        const webMm = 2.5;
+        for (let i = 0; i < spacer.t.length; i += 1) {
+          const t = spacer.t[i];
+          const nearUpper = upper.some((disc) => Math.abs(t - disc.center) < bore + 0.6);
+          const nearLower = lower.some((disc) => Math.abs(t - disc.center) < bore + 0.6);
+          if (!nearUpper && !nearLower) {
+            spacer.top[i] = spacer.bottom[i];
+          } else if (!nearUpper) {
+            spacer.top[i] = Math.min(spacer.top[i], spacer.bottom[i] + webMm);
+          } else if (!nearLower) {
+            spacer.bottom[i] = Math.max(spacer.bottom[i], spacer.top[i] - webMm);
+          }
+        }
+        pieces.push({
+          label: `spacer-row${rowIndex + 1}${segment.suffix}-L${index + 1}${index + 2}`,
+          ...trimEmptyEnds(spacer),
+          lengthMm: segment.length,
+          axialCenterMm: segment.center,
+        });
+      }
     }
   }
 

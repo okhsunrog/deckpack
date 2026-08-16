@@ -30,7 +30,12 @@ import {
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { getHeightMapAsset } from "../data/enclosures";
 import { boxCenter, boxSize, componentBox } from "../domain/geometry";
-import { assembledPieceTriangles, computeHolderPieces } from "../domain/holder";
+import {
+  assembledPieceTriangles,
+  computeHolderPieces,
+  DEFAULT_HOLDER_OPTIONS,
+  type HolderStyle,
+} from "../domain/holder";
 import type {
   Box3D,
   CellSpec,
@@ -54,6 +59,7 @@ interface PlannerSceneProps {
   cell: CellSpec;
   toleranceStack: ToleranceLayer[];
   showHolders: boolean;
+  holderStyle: HolderStyle;
   components: ComponentPlacement[];
   componentSpecs: ComponentSpec[];
   evaluation?: WorkspaceEvaluation;
@@ -296,17 +302,22 @@ function HolderObjects({
   cell,
   toleranceStack,
   enclosure,
+  style,
 }: {
   plan: PackPlan;
   cell: CellSpec;
   toleranceStack: ToleranceLayer[];
   enclosure: EnclosureSpec;
+  style: HolderStyle;
 }) {
   const geometry = useDisposable(
     useMemo(() => {
       const result = new BufferGeometry();
       if (plan.orientation === "z") return result;
-      const layout = computeHolderPieces(plan, cell, toleranceStack, enclosure);
+      const layout = computeHolderPieces(plan, cell, toleranceStack, enclosure, {
+        ...DEFAULT_HOLDER_OPTIONS,
+        style,
+      });
       const positions: number[] = [];
       for (const piece of layout.pieces) {
         positions.push(...assembledPieceTriangles(piece, layout));
@@ -314,7 +325,7 @@ function HolderObjects({
       result.setAttribute("position", new Float32BufferAttribute(positions, 3));
       result.computeVertexNormals();
       return result;
-    }, [plan, cell, toleranceStack, enclosure]),
+    }, [plan, cell, toleranceStack, enclosure, style]),
   );
   return (
     <group>
@@ -902,6 +913,7 @@ function SceneContents(props: SceneContentsProps) {
               cell={props.cell}
               toleranceStack={props.toleranceStack}
               enclosure={enclosure}
+              style={props.holderStyle}
             />
           )}
           {plan.serviceVolumes.map((volume) => {

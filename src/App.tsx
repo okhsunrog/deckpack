@@ -6,7 +6,7 @@ import { ResultsPanel } from "./components/ResultsPanel";
 import { useLayoutEngine } from "./components/use-layout-engine";
 import { componentsLibrary, getCell } from "./data/library";
 import { evaluateWorkspace } from "./domain/geometry";
-import { generateHolder } from "./domain/holder";
+import { DEFAULT_HOLDER_OPTIONS, generateHolder } from "./domain/holder";
 import { planSignature } from "./domain/packing";
 import { activeServiceReservations } from "./domain/service-reservations";
 import { PlannerScene } from "./scene/PlannerScene";
@@ -41,6 +41,7 @@ function exportHolder(plan: PackPlan, cell: CellSpec) {
       cell,
       state.config.pack.toleranceStack,
       state.config.enclosure,
+      { ...DEFAULT_HOLDER_OPTIONS, style: state.holderStyle },
     );
     const thinnest = Math.min(...build.pieces.map((piece) => piece.minWallMm));
     download(
@@ -72,6 +73,8 @@ function App() {
   const resetProject = usePlannerStore((state) => state.resetProject);
   const showHolders = usePlannerStore((state) => state.showHolders);
   const setShowHolders = usePlannerStore((state) => state.setShowHolders);
+  const holderStyle = usePlannerStore((state) => state.holderStyle);
+  const setHolderStyle = usePlannerStore((state) => state.setHolderStyle);
   const cell = getCell(config.pack.cellId);
   const { plans, exploredCount, loading } = useLayoutEngine(config, cell);
   // Ids change whenever tolerances or the enclosure change, so fall back to
@@ -195,6 +198,16 @@ function App() {
               >
                 холдер
               </button>
+              {showHolders && (
+                <button
+                  type="button"
+                  className="legend-toggle active"
+                  title="Цельная лента держит банку за середину; краевые полоски — только за края у торцов, как готовые модульные холдеры"
+                  onClick={() => setHolderStyle(holderStyle === "full" ? "edge" : "full")}
+                >
+                  {holderStyle === "full" ? "лента" : "края"}
+                </button>
+              )}
             </div>
           </div>
           <div className="scene-frame">
@@ -204,6 +217,7 @@ function App() {
               cell={cell}
               toleranceStack={config.pack.toleranceStack}
               showHolders={showHolders}
+              holderStyle={holderStyle}
               components={placements}
               componentSpecs={componentsLibrary}
               evaluation={evaluation}
