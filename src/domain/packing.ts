@@ -289,6 +289,12 @@ interface ProfilePlacementRequest {
   cellLayers: number[];
   /** Center distance at which two cells of adjacent layers touch. */
   supportDistanceMm: number;
+  /**
+   * Settle the lattice as one rigid body instead of draping columns. Brick
+   * packs stack cells vertically, so a column riding a ramp would push its
+   * whole tower up; only staggered lattices benefit from per-column settling.
+   */
+  rigid: boolean;
   axialIndex: number;
   orientation: CellOrientation;
   cylinderRadiusMm: number;
@@ -361,9 +367,9 @@ function profilePlacements(request: ProfilePlacementRequest): {
   const evaluate = (x: number): { x: number; cellZ: number[]; restMm: number } | undefined => {
     const cellZ = new Array<number>(localCells.length).fill(-Infinity);
     let highest = -Infinity;
-    for (let layer = 0; layer < layerCount; layer += 1) {
-      for (const index of byLayer[layer]) {
-        const cell = localCells[index];
+    if (request.rigid) {
+      let liftMm = -Infinity;
+      for (const [index, cell] of localCells.entries()) {
         const floorZ = minCylinderCenterZ(spec, {
           centerXmm: cell[0] + x,
           centerYmm: cell[1] + yOffset,
@@ -372,12 +378,31 @@ function profilePlacements(request: ProfilePlacementRequest): {
           halfLengthMm: request.cylinderHalfLengthMm,
         });
         if (!Number.isFinite(floorZ)) return undefined;
-        let z = floorZ;
-        for (const support of supports[index]) {
-          z = Math.max(z, cellZ[support.lower] + support.riseMm);
+        liftMm = Math.max(liftMm, floorZ - localCells[index][2]);
+      }
+      for (const [index, cell] of localCells.entries()) {
+        cellZ[index] = cell[2] + liftMm;
+        highest = Math.max(highest, cellZ[index]);
+      }
+    } else {
+      for (let layer = 0; layer < layerCount; layer += 1) {
+        for (const index of byLayer[layer]) {
+          const cell = localCells[index];
+          const floorZ = minCylinderCenterZ(spec, {
+            centerXmm: cell[0] + x,
+            centerYmm: cell[1] + yOffset,
+            axis: orientation,
+            radiusMm: request.cylinderRadiusMm,
+            halfLengthMm: request.cylinderHalfLengthMm,
+          });
+          if (!Number.isFinite(floorZ)) return undefined;
+          let z = floorZ;
+          for (const support of supports[index]) {
+            z = Math.max(z, cellZ[support.lower] + support.riseMm);
+          }
+          cellZ[index] = z;
+          highest = Math.max(highest, z);
         }
-        cellZ[index] = z;
-        highest = Math.max(highest, z);
       }
     }
     const overflow = highest - topLimitZ;
@@ -732,6 +757,7 @@ export function enumeratePackPlans(request: EnumerationRequest): EnumerationResp
                     template.cellPitch[axialAxis === 0 ? 1 : 0],
                     template.reservationSize[2] + tolerance.betweenGroups,
                   ) + 0.6,
+                rigid: packingMode === "brick",
               });
               placements = profiled.placements;
               exploredCount += profiled.scannedCount;

@@ -230,4 +230,28 @@ describe("Spark case enumeration", () => {
     }
     expect(response.plans.some((plan) => plan.metrics.layerCount === 2)).toBe(true);
   });
+
+  it("keeps brick layers flat: a ramp column may not push its tower up alone", () => {
+    // Brick cells stack vertically, so draping a single column would lift one
+    // top cell above the rest. Only staggered lattices settle per column; brick
+    // packs must stay rigid. Shrink the group separator so brick fits the case.
+    const config = structuredClone(defaultConfig);
+    for (const layer of config.pack.toleranceStack) {
+      if (layer.application === "between-groups") layer.thicknessMm = 0.5;
+    }
+    const plans = enumeratePackPlans({ config, cell }).plans;
+    const bricks = plans.filter((plan) => plan.packingMode === "brick");
+    expect(bricks.length).toBeGreaterThan(0);
+    for (const plan of bricks) {
+      const byLayer = new Map<number, number[]>();
+      for (const placed of plan.cells) {
+        const zs = byLayer.get(placed.layer) ?? [];
+        zs.push(placed.position[2]);
+        byLayer.set(placed.layer, zs);
+      }
+      for (const zs of byLayer.values()) {
+        expect(Math.max(...zs) - Math.min(...zs)).toBeLessThan(1e-6);
+      }
+    }
+  });
 });
