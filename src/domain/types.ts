@@ -132,6 +132,8 @@ export interface CellPlacement {
   id: string;
   groupId: string;
   seriesIndex: number;
+  /** Lattice layer the cell belongs to; independent of its settled height. */
+  layer: number;
   position: Vec3;
 }
 

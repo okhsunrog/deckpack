@@ -139,13 +139,12 @@ export function computeHolderPieces(
     const rowCells = plan.cells.filter(
       (placed) => Math.abs(placed.position[axialIndex] - rowCenter) < cell.sleevedHeightMm / 2,
     );
-    const layerZs = groupBy(
-      rowCells.map((placed) => placed.position[2]),
-      1,
-    );
-    const layers = layerZs.map((z) =>
+    // Layers come from the lattice, not from z: a draped pack has cells of
+    // one layer at different heights.
+    const layerIndices = [...new Set(rowCells.map((placed) => placed.layer))].sort((a, b) => a - b);
+    const layers = layerIndices.map((layerIndex) =>
       rowCells
-        .filter((placed) => Math.abs(placed.position[2] - z) <= 1)
+        .filter((placed) => placed.layer === layerIndex)
         .map((placed) => ({ center: placed.position[lateralIndex], z: placed.position[2] })),
     );
     const lateralAll = rowCells.map((placed) => placed.position[lateralIndex]);
@@ -158,7 +157,7 @@ export function computeHolderPieces(
     const bottomLayer = layers[0];
     const cradle = waveProfile(
       -enclosure.dimensionsMm.height / 2,
-      Math.min(...bottomLayer.map((d) => d.z)),
+      Math.max(...bottomLayer.map((d) => d.z)),
       [],
       bottomLayer,
       bore,
@@ -177,6 +176,12 @@ export function computeHolderPieces(
           : { min: [t - 0.25, axialLo, 0], max: [t + 0.25, axialHi, 0] };
       const floorZ = topZ - availableDepthForBox(enclosure, probe);
       cradle.bottom[i] = Math.min(Math.max(cradle.bottom[i], floorZ), cradle.top[i]);
+    }
+    // Between draped columns of different heights the slab would rise to the
+    // tallest one; cap stretches without a nearby cell to a thin web instead.
+    for (let i = 0; i < cradle.t.length; i += 1) {
+      const near = bottomLayer.some((disc) => Math.abs(cradle.t[i] - disc.center) < bore + 0.6);
+      if (!near) cradle.top[i] = Math.min(cradle.top[i], cradle.bottom[i] + 2.5);
     }
     pieces.push({
       label: `cradle-row${rowIndex + 1}`,

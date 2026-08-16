@@ -9,9 +9,7 @@ import {
   expandBox,
   largestEmptyAxisAlignedBox,
   minCylinderCenterZ,
-  translateBox,
   unionBoxes,
-  type ProfileCylinder,
 } from "./geometry";
 import { activeServiceReservations } from "./service-reservations";
 import type {
@@ -287,25 +285,39 @@ interface ProfilePlacementRequest {
   container: Box3D;
   localBounds: Box3D;
   localCells: Vec3[];
+  /** Lattice layer of every local cell. */
+  cellLayers: number[];
+  /** Center distance at which two cells of adjacent layers touch. */
+  supportDistanceMm: number;
+  axialIndex: number;
   orientation: CellOrientation;
   cylinderRadiusMm: number;
   cylinderHalfLengthMm: number;
-  localServiceBoxes: Box3D[];
+}
+
+export interface ProfilePlacement {
+  anchor: PlacementAnchor;
+  xOffset: number;
+  yOffset: number;
+  /** Final z of every local cell: the lattice drapes over the terrain. */
+  cellZ: number[];
 }
 
 /**
- * Scan x positions along the deck and let the pack settle onto the exact inner
- * surface like a rigid body dropped vertically: every cell is checked as a
- * cylinder, so the pack rests on the deep floor and may overhang a ramp as long
- * as the curved undersides genuinely clear it. Out of all feasible positions
- * only representatives are kept: tail-most, nose-most, the one closest to the
- * deck center, and the one that settles deepest.
+ * Scan x positions along the deck and drape the lattice over the exact inner
+ * surface: every bottom-layer cell settles onto its own floor as a cylinder,
+ * and each upper cell rests on its actual neighbours, preserving the vertical
+ * spacing of the lattice pair-wise. An edge column riding a ramp therefore
+ * lifts only itself and its direct dependents instead of the whole pack. Out
+ * of all feasible positions only representatives are kept: tail-most,
+ * nose-most, the one closest to the deck center, and the deepest.
  */
 function profilePlacements(request: ProfilePlacementRequest): {
-  placements: Array<{ anchor: PlacementAnchor; offset: Vec3 }>;
+  placements: ProfilePlacement[];
   scannedCount: number;
 } {
-  const { spec, container, localBounds, localCells, orientation } = request;
+  const { spec, container, localBounds, localCells, cellLayers, axialIndex, orientation } = request;
+  const lateralIndex = axialIndex === 0 ? 1 : 0;
   const tailX = container.min[0] - localBounds.min[0];
   const noseX = container.max[0] - localBounds.max[0];
   if (tailX > noseX) return { placements: [], scannedCount: 0 };
@@ -315,17 +327,26 @@ function profilePlacements(request: ProfilePlacementRequest): {
     xOffsets.add(Math.min(noseX, x));
   }
   const yOffset = -(localBounds.min[1] + localBounds.max[1]) / 2;
+  const layerCount = Math.max(...cellLayers) + 1;
+  const byLayer: number[][] = Array.from({ length: layerCount }, () => []);
+  cellLayers.forEach((layer, index) => byLayer[layer].push(index));
 
-  // Only the lowest cell of each vertical column can touch the floor first.
-  const columns = new Map<string, Vec3>();
-  let highestLocalZ = -Infinity;
-  for (const cell of localCells) {
-    const key = `${cell[0].toFixed(3)}:${cell[1].toFixed(3)}`;
-    const existing = columns.get(key);
-    if (!existing || cell[2] < existing[2]) columns.set(key, cell);
-    highestLocalZ = Math.max(highestLocalZ, cell[2]);
+  // Support pairs from the undraped lattice: an upper cell keeps at least its
+  // original vertical spacing to every lower neighbour it actually rests on,
+  // i.e. pairs at lattice touch distance - not farther diagonal neighbours.
+  const supports: Array<Array<{ lower: number; riseMm: number }>> = localCells.map(() => []);
+  for (let layer = 1; layer < layerCount; layer += 1) {
+    for (const upper of byLayer[layer]) {
+      for (const lower of byLayer[layer - 1]) {
+        if (Math.abs(localCells[upper][axialIndex] - localCells[lower][axialIndex]) > 1) continue;
+        const lateral = Math.abs(localCells[upper][lateralIndex] - localCells[lower][lateralIndex]);
+        const rise = localCells[upper][2] - localCells[lower][2];
+        if (Math.hypot(lateral, rise) > request.supportDistanceMm) continue;
+        supports[upper].push({ lower, riseMm: rise });
+      }
+    }
   }
-  const bottomCells = [...columns.values()];
+
   const topLimitZ = cylinderTopLimitZ(spec, {
     centerXmm: 0,
     centerYmm: 0,
@@ -334,53 +355,80 @@ function profilePlacements(request: ProfilePlacementRequest): {
     halfLengthMm: request.cylinderHalfLengthMm,
   });
 
+  const nearMisses: Array<{ x: number; overflow: number }> = [];
   let nearMissX: number | undefined;
   let nearMissOverflow = Infinity;
-  const evaluate = (x: number): { x: number; zOffset: number } | undefined => {
-    let zOffset = -Infinity;
-    for (const cell of bottomCells) {
-      const cylinder: ProfileCylinder = {
-        centerXmm: cell[0] + x,
-        centerYmm: cell[1] + yOffset,
-        axis: orientation,
-        radiusMm: request.cylinderRadiusMm,
-        halfLengthMm: request.cylinderHalfLengthMm,
-      };
-      const minCenterZ = minCylinderCenterZ(spec, cylinder);
-      if (!Number.isFinite(minCenterZ)) return undefined;
-      zOffset = Math.max(zOffset, minCenterZ - cell[2]);
+  const evaluate = (x: number): { x: number; cellZ: number[]; restMm: number } | undefined => {
+    const cellZ = new Array<number>(localCells.length).fill(-Infinity);
+    let highest = -Infinity;
+    for (let layer = 0; layer < layerCount; layer += 1) {
+      for (const index of byLayer[layer]) {
+        const cell = localCells[index];
+        const floorZ = minCylinderCenterZ(spec, {
+          centerXmm: cell[0] + x,
+          centerYmm: cell[1] + yOffset,
+          axis: orientation,
+          radiusMm: request.cylinderRadiusMm,
+          halfLengthMm: request.cylinderHalfLengthMm,
+        });
+        if (!Number.isFinite(floorZ)) return undefined;
+        let z = floorZ;
+        for (const support of supports[index]) {
+          z = Math.max(z, cellZ[support.lower] + support.riseMm);
+        }
+        cellZ[index] = z;
+        highest = Math.max(highest, z);
+      }
     }
-    const overflow = highestLocalZ + zOffset - topLimitZ;
+    const overflow = highest - topLimitZ;
     if (overflow > EPSILON) {
-      // Remember the least-bad spot: a feasibility window narrower than the
-      // scan step hides between grid points and is recovered by refining here.
+      // Remember the least-bad spots: feasibility windows narrower than the
+      // scan step hide between grid points and are recovered by refining.
+      nearMisses.push({ x, overflow });
       if (overflow < nearMissOverflow) {
         nearMissOverflow = overflow;
         nearMissX = x;
       }
       return undefined;
     }
-    const servicesFit = request.localServiceBoxes.every((box) =>
-      enclosureContainmentKernel.contains(spec, translateBox(box, [x, yOffset, zOffset])),
-    );
-    return servicesFit ? { x, zOffset } : undefined;
+    const restMm =
+      byLayer[0].reduce((sum, index) => sum + cellZ[index], 0) / Math.max(1, byLayer[0].length);
+    return { x, cellZ, restMm };
   };
 
-  const feasible: Array<{ x: number; zOffset: number }> = [];
+  type Candidate = { x: number; cellZ: number[]; restMm: number };
+  const feasible: Candidate[] = [];
   const scanned = [...xOffsets].sort((a, b) => a - b);
   for (const x of scanned) {
     const candidate = evaluate(x);
     if (candidate) feasible.push(candidate);
   }
-  if (feasible.length === 0 && nearMissX !== undefined) {
-    for (
-      let x = nearMissX - PROFILE_PLACEMENT_STEP_MM;
-      x <= nearMissX + PROFILE_PLACEMENT_STEP_MM;
-      x += 0.25
-    ) {
-      if (x <= tailX || x >= noseX) continue;
-      const candidate = evaluate(x);
-      if (candidate) feasible.push(candidate);
+  // Windows narrower than the scan step hide between grid points: the
+  // overflow landscape can have several local minima (one per ramp), so zoom
+  // into the best few coarse near-misses, then once more around the best
+  // refined spot.
+  if (feasible.length === 0 && nearMisses.length > 0) {
+    const seeds = [...nearMisses]
+      .sort((a, b) => a.overflow - b.overflow)
+      .slice(0, 4)
+      .map((miss) => miss.x);
+    for (const seed of seeds) {
+      for (
+        let x = seed - PROFILE_PLACEMENT_STEP_MM;
+        x <= seed + PROFILE_PLACEMENT_STEP_MM;
+        x += 0.25
+      ) {
+        if (x <= tailX || x >= noseX) continue;
+        const candidate = evaluate(x);
+        if (candidate) feasible.push(candidate);
+      }
+    }
+    if (feasible.length === 0 && nearMissX !== undefined) {
+      for (let x = nearMissX - 0.3; x <= nearMissX + 0.3 + EPSILON; x += 0.03) {
+        if (x <= tailX || x >= noseX) continue;
+        const candidate = evaluate(x);
+        if (candidate) feasible.push(candidate);
+      }
     }
   }
   if (feasible.length === 0) return { placements: [], scannedCount: scanned.length };
@@ -388,7 +436,7 @@ function profilePlacements(request: ProfilePlacementRequest): {
   // Refine around the deepest coarse hit so the pack truly rests on the floor
   // instead of stopping at the scan grid resolution.
   const coarseDeepest = feasible.reduce((best, candidate) =>
-    candidate.zOffset < best.zOffset ? candidate : best,
+    candidate.restMm < best.restMm ? candidate : best,
   );
   for (
     let x = coarseDeepest.x - PROFILE_PLACEMENT_STEP_MM + 0.5;
@@ -403,7 +451,7 @@ function profilePlacements(request: ProfilePlacementRequest): {
 
   const byDistanceToZero = [...feasible].sort((a, b) => Math.abs(a.x) - Math.abs(b.x));
   const deepest = [...feasible].sort(
-    (a, b) => a.zOffset - b.zOffset || Math.abs(a.x) - Math.abs(b.x),
+    (a, b) => a.restMm - b.restMm || Math.abs(a.x) - Math.abs(b.x),
   )[0];
   const representatives = new Map<number, PlacementAnchor>();
   representatives.set(deepest.x, "profile");
@@ -413,8 +461,8 @@ function profilePlacements(request: ProfilePlacementRequest): {
   const placements = [...representatives.entries()]
     .sort(([a], [b]) => a - b)
     .map(([x, anchor]) => {
-      const zOffset = feasible.find((candidate) => candidate.x === x)!.zOffset;
-      return { anchor, offset: [x, yOffset, zOffset] as Vec3 };
+      const candidate = feasible.find((item) => item.x === x)!;
+      return { anchor, xOffset: x, yOffset, cellZ: candidate.cellZ };
     });
   return { placements, scannedCount: scanned.length };
 }
@@ -428,10 +476,6 @@ function profileClearance(container: Box3D, bounds: Box3D): number {
     container.max[1] - bounds.max[1],
     container.max[2] - bounds.max[2],
   );
-}
-
-function uniqueLayerCount(cells: Vec3[]): number {
-  return new Set(cells.map((position) => position[2].toFixed(3))).size;
 }
 
 /**
@@ -607,7 +651,16 @@ export function enumeratePackPlans(request: EnumerationRequest): EnumerationResp
               crossStagger,
             );
             const allLocalCells = localGroups.flatMap((group) => group.cellPositions);
-            if (uniqueLayerCount(allLocalCells) > pack.maxLayers) continue;
+            // Lattice layers are identified from the undraped local z values;
+            // the settled heights may differ per cell once draped over terrain.
+            const distinctLocalZ = [
+              ...new Set(allLocalCells.map((position) => Math.round(position[2] * 100) / 100)),
+            ].sort((a, b) => a - b);
+            const latticeLayerCount = distinctLocalZ.length;
+            if (latticeLayerCount > pack.maxLayers) continue;
+            const cellLayers = allLocalCells.map((position) =>
+              distinctLocalZ.findIndex((value) => Math.abs(value - position[2]) < 0.02),
+            );
 
             const { reservationCellSize } = template;
             if (
@@ -629,14 +682,15 @@ export function enumeratePackPlans(request: EnumerationRequest): EnumerationResp
               tolerance.outerWrap,
               tolerance.outerWrap,
             ]);
-            const localServiceVolumes: ServiceVolume[] = activeServiceReservations(pack)
-              .filter((reservation) => reservation.enabled)
-              .map((reservation) => ({
-                id: reservation.id,
-                label: reservation.label,
-                kind: reservation.kind,
-                box: serviceBoxForEnvelope(reservation, blockEnvelope),
-              }));
+            const activeReservations = activeServiceReservations(pack).filter(
+              (reservation) => reservation.enabled,
+            );
+            const localServiceVolumes: ServiceVolume[] = activeReservations.map((reservation) => ({
+              id: reservation.id,
+              label: reservation.label,
+              kind: reservation.kind,
+              box: serviceBoxForEnvelope(reservation, blockEnvelope),
+            }));
             const localBounds = unionBoxes([
               blockEnvelope,
               ...localServiceVolumes.map((v) => v.box),
@@ -649,12 +703,17 @@ export function enumeratePackPlans(request: EnumerationRequest): EnumerationResp
             ];
             if (requiredSize.some((value, axis) => value > enclosureSize[axis] + 1e-6)) continue;
 
-            let placements: Array<{ anchor: PlacementAnchor; offset: Vec3 }>;
+            let placements: ProfilePlacement[];
             if (enclosure.kind === "box") {
-              placements = ANCHORS.map((anchor) => ({
-                anchor,
-                offset: anchorOffset(localBounds, container, anchor),
-              }));
+              placements = ANCHORS.map((anchor) => {
+                const offset = anchorOffset(localBounds, container, anchor);
+                return {
+                  anchor,
+                  xOffset: offset[0],
+                  yOffset: offset[1],
+                  cellZ: allLocalCells.map((position) => position[2] + offset[2]),
+                };
+              });
               exploredCount += placements.length;
             } else {
               const profiled = profilePlacements({
@@ -662,46 +721,107 @@ export function enumeratePackPlans(request: EnumerationRequest): EnumerationResp
                 container,
                 localBounds,
                 localCells: allLocalCells,
+                cellLayers,
+                axialIndex: axialAxis,
                 orientation,
                 cylinderRadiusMm:
                   reservationCellSize[axialAxis === 0 ? 1 : 0] / 2 + tolerance.outerWrap,
                 cylinderHalfLengthMm: reservationCellSize[axialAxis] / 2 + tolerance.outerWrap,
-                localServiceBoxes: localServiceVolumes.map((volume) => volume.box),
+                supportDistanceMm:
+                  Math.max(
+                    template.cellPitch[axialAxis === 0 ? 1 : 0],
+                    template.reservationSize[2] + tolerance.betweenGroups,
+                  ) + 0.6,
               });
               placements = profiled.placements;
               exploredCount += profiled.scannedCount;
             }
-            for (const { anchor, offset } of placements) {
-              const translatedBlock = translateBox(blockEnvelope, offset);
-              const translatedServices = localServiceVolumes.map((volume) => ({
-                ...volume,
-                box: translateBox(volume.box, offset),
-              }));
-              const bounds = translateBox(localBounds, offset);
-              // For a box every bound is checked at once; for the profiled
-              // case each cell already passed the exact cylinder check above.
+            const groupStarts: number[] = [];
+            {
+              let cursor = 0;
+              for (const group of localGroups) {
+                groupStarts.push(cursor);
+                cursor += group.cellPositions.length;
+              }
+            }
+            for (const placement of placements) {
+              const { anchor } = placement;
+              const finalPositions: Vec3[] = allLocalCells.map((position, index) => [
+                position[0] + placement.xOffset,
+                position[1] + placement.yOffset,
+                placement.cellZ[index],
+              ]);
+              // Draping preserves lattice spacing pair-wise; this guards the
+              // invariant against future regressions.
               if (
-                enclosure.kind === "box" &&
-                !enclosureContainmentKernel.contains(enclosure, bounds)
+                !cellsPhysicallySeparated(
+                  finalPositions,
+                  axialAxis,
+                  reservationCellSize[axialAxis === 0 ? 1 : 0],
+                  reservationCellSize[axialAxis],
+                )
+              )
+                continue;
+              const translatedBlock = expandBox(
+                unionBoxes(
+                  finalPositions.map((position) =>
+                    boxFromCenterSize(position, reservationCellSize),
+                  ),
+                ),
+                [tolerance.outerWrap, tolerance.outerWrap, tolerance.outerWrap],
+              );
+              const translatedServices = localServiceVolumes.map((volume, index) => ({
+                ...volume,
+                box: serviceBoxForEnvelope(activeReservations[index], translatedBlock),
+              }));
+              const bounds = unionBoxes([
+                translatedBlock,
+                ...translatedServices.map((volume) => volume.box),
+              ]);
+              // For a box every bound is checked at once; for the profiled
+              // case the cells passed the exact cylinder check while draping,
+              // so only the attached service volumes remain to verify.
+              if (enclosure.kind === "box") {
+                if (!enclosureContainmentKernel.contains(enclosure, bounds)) continue;
+              } else if (
+                !translatedServices.every((volume) =>
+                  enclosureContainmentKernel.contains(enclosure, volume.box),
+                )
               )
                 continue;
 
+              const groupCenterById = new Map<string, Vec3>();
+              localGroups.forEach((group, groupIndex) => {
+                const start = groupStarts[groupIndex];
+                const center: Vec3 = [0, 0, 0];
+                group.cellPositions.forEach((_, cellIndex) => {
+                  const position = finalPositions[start + cellIndex];
+                  center[0] += position[0];
+                  center[1] += position[1];
+                  center[2] += position[2];
+                });
+                groupCenterById.set(
+                  group.id,
+                  center.map((value) => value / group.cellPositions.length) as Vec3,
+                );
+              });
               const orderedGroups: SeriesGroup[] = routed.map((group, seriesIndex) => ({
                 id: group.id,
                 seriesIndex,
                 grid: group.grid,
-                center: group.center.map((value, axis) => value + offset[axis]) as Vec3,
+                center: groupCenterById.get(group.id)!,
                 cellIds: group.cellPositions.map((_, cellIndex) => `${group.id}-c${cellIndex}`),
               }));
               const seriesById = new Map(
                 orderedGroups.map((group) => [group.id, group.seriesIndex]),
               );
-              const cells = localGroups.flatMap((group) =>
-                group.cellPositions.map((position, cellIndex) => ({
+              const cells = localGroups.flatMap((group, groupIndex) =>
+                group.cellPositions.map((_, cellIndex) => ({
                   id: `${group.id}-c${cellIndex}`,
                   groupId: group.id,
                   seriesIndex: seriesById.get(group.id)!,
-                  position: position.map((value, axis) => value + offset[axis]) as Vec3,
+                  layer: cellLayers[groupStarts[groupIndex] + cellIndex],
+                  position: finalPositions[groupStarts[groupIndex] + cellIndex],
                 })),
               );
               const seriesPath = orderedGroups.map((group) => group.center);
@@ -731,7 +851,7 @@ export function enumeratePackPlans(request: EnumerationRequest): EnumerationResp
                   enclosure.kind === "box"
                     ? enclosureContainmentKernel.clearance(enclosure, bounds)
                     : profileClearance(container, bounds),
-                layerCount: uniqueLayerCount(cells.map((placedCell) => placedCell.position)),
+                layerCount: latticeLayerCount,
                 reservationVolumeMm3,
                 utilizationPercent: (reservationVolumeMm3 / enclosureVolume) * 100,
                 largestFreeBox:
@@ -740,9 +860,7 @@ export function enumeratePackPlans(request: EnumerationRequest): EnumerationResp
                     : metricShell().largestFreeBox,
                 manufacturability: Math.max(
                   0,
-                  100 -
-                    (packingMode === "staggered" ? 25 : 0) -
-                    Math.max(0, uniqueLayerCount(allLocalCells) - 1) * 8,
+                  100 - (packingMode === "staggered" ? 25 : 0) - (latticeLayerCount - 1) * 8,
                 ),
               };
               const plan: PackPlan = {
