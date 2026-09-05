@@ -126,11 +126,12 @@ export function sanitizePersistedConfig(
       thicknessMm: 0,
     });
   }
-  if (
-    !config.pack.toleranceStack.some(
-      (layer) => layer.kind === "holder" && layer.application === "between-cells",
-    )
-  ) {
+  const hasHolderWall = config.pack.toleranceStack.some(
+    (layer) =>
+      layer.kind === "holder" &&
+      (layer.application === "between-cells" || layer.application === "between-columns"),
+  );
+  if (!hasHolderWall) {
     const compound = config.pack.toleranceStack.find(
       (layer) => layer.application === "between-cells",
     );
