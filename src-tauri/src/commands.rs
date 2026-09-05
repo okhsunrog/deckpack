@@ -1,8 +1,9 @@
 //! IPC surface of the desktop app: thin wrappers over `deckpack-core`.
 
 use deckpack_core::{
-    CellSpec, ComponentPlacement, ComponentSpec, EnclosureSpec, HeightMapAsset, PackPlan,
-    WorkspaceEvaluation, assets, geometry, library,
+    CellSpec, ComponentPlacement, ComponentSpec, EnclosureSpec, EnumerationRequest,
+    EnumerationResponse, HeightMapAsset, PackPlan, WorkspaceEvaluation, assets, geometry, library,
+    packing,
 };
 
 #[tauri::command]
@@ -34,4 +35,17 @@ pub fn evaluate_workspace(
     placements: Vec<ComponentPlacement>,
 ) -> Result<WorkspaceEvaluation, String> {
     geometry::evaluate_workspace(&enclosure, &plan, &placements).map_err(|error| error.to_string())
+}
+
+/// Enumerate every feasible pack layout for the request. The search runs on a
+/// blocking thread (rayon inside) so the IPC thread stays free; the frontend
+/// drops stale responses by request id.
+#[tauri::command]
+#[specta::specta]
+pub async fn enumerate_plans(request: EnumerationRequest) -> Result<EnumerationResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        packing::enumerate_pack_plans(&request).map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("enumeration task failed: {error}"))?
 }

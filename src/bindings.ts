@@ -15,6 +15,12 @@ export const commands = {
 	 *  work is a few hundred microseconds.
 	 */
 	evaluateWorkspace: (enclosure: EnclosureSpec, plan: PackPlan, placements: ComponentPlacement[]) => typedError<WorkspaceEvaluation, string>(__TAURI_INVOKE("evaluate_workspace", { enclosure, plan: ({...plan,cellSizeMm:plan.cellSizeMm.map(i=>i),cells:plan.cells.map(i=>({...i,position:i.position.map(i=>i)})),groups:plan.groups.map(i=>({...i,center:i.center.map(i=>i)})),seriesPath:plan.seriesPath.map(i=>i.map(i=>i)),blocks:plan.blocks.map(i=>({...i,envelope:({...i.envelope,min:i.envelope.min.map(i=>i),max:i.envelope.max.map(i=>i)})})),serviceVolumes:plan.serviceVolumes.map(i=>({...i,box:({...i.box,min:i.box.min.map(i=>i),max:i.box.max.map(i=>i)})})),bounds:({...plan.bounds,min:plan.bounds.min.map(i=>i),max:plan.bounds.max.map(i=>i)}),metrics:({...plan.metrics,largestFreeBox:({...plan.metrics.largestFreeBox,box:({...plan.metrics.largestFreeBox.box,min:plan.metrics.largestFreeBox.box.min.map(i=>i),max:plan.metrics.largestFreeBox.box.max.map(i=>i)})})})}), placements: placements.map(i=>({...i,position:i.position.map(i=>i)})) })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,components:v.data.components.map(i=>({...i,box:({...i.box,min:i.box.min.map(i=>i),max:i.box.max.map(i=>i)})})),largestFreeBox:({...v.data.largestFreeBox,box:({...v.data.largestFreeBox.box,min:v.data.largestFreeBox.box.min.map(i=>i),max:v.data.largestFreeBox.box.max.map(i=>i)})})}) } : v) as typeof v)),
+	/**
+	 *  Enumerate every feasible pack layout for the request. The search runs on a
+	 *  blocking thread (rayon inside) so the IPC thread stays free; the frontend
+	 *  drops stale responses by request id.
+	 */
+	enumeratePlans: (request: EnumerationRequest) => typedError<EnumerationResponse, string>(__TAURI_INVOKE("enumerate_plans", { request: ({...request,config:({...request.config,pack:({...request.config.pack,toleranceStack:request.config.pack.toleranceStack.map(i=>i),serviceReservations:request.config.pack.serviceReservations.map(i=>({...i,sizeMm:i.sizeMm.map(i=>i),offsetMm:i.offsetMm==null?i.offsetMm:i.offsetMm.map(i=>i)}))})}),cell:({...request.cell,bareDiameterMm:request.cell.bareDiameterMm==null?request.cell.bareDiameterMm:request.cell.bareDiameterMm,bareHeightMm:request.cell.bareHeightMm==null?request.cell.bareHeightMm:request.cell.bareHeightMm})}) })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,plans:v.data.plans.map(i=>({...i,cellSizeMm:i.cellSizeMm.map(i=>i),cells:i.cells.map(i=>({...i,position:i.position.map(i=>i)})),groups:i.groups.map(i=>({...i,center:i.center.map(i=>i)})),seriesPath:i.seriesPath.map(i=>i.map(i=>i)),blocks:i.blocks.map(i=>({...i,envelope:({...i.envelope,min:i.envelope.min.map(i=>i),max:i.envelope.max.map(i=>i)})})),serviceVolumes:i.serviceVolumes.map(i=>({...i,box:({...i.box,min:i.box.min.map(i=>i),max:i.box.max.map(i=>i)})})),bounds:({...i.bounds,min:i.bounds.min.map(i=>i),max:i.bounds.max.map(i=>i)}),metrics:({...i.metrics,largestFreeBox:({...i.metrics.largestFreeBox,box:({...i.metrics.largestFreeBox.box,min:i.metrics.largestFreeBox.box.min.map(i=>i),max:i.metrics.largestFreeBox.box.max.map(i=>i)})})})}))}) } : v) as typeof v)),
 };
 
 /* Types */
@@ -114,6 +120,16 @@ export type Dimensions3D = {
 
 export type EnclosureSpec = { kind: "box"; dimensionsMm: Dimensions3D } | { kind: "mesh-heightmap"; assetId: string; dimensionsMm: Dimensions3D };
 
+export type EnumerationRequest = {
+	config: PlannerConfig,
+	cell: CellSpec,
+};
+
+export type EnumerationResponse = {
+	plans: PackPlan[],
+	exploredCount: number,
+};
+
 /**  Sampled inner surface of an enclosure, generated from its STL. */
 export type HeightMapAsset = {
 	id: string,
@@ -146,11 +162,16 @@ export type LayoutMetrics = {
 	manufacturability: number,
 };
 
+/**  Cell axis requested by the user: a fixed axis or let the planner pick. */
+export type OrientationRequest = "auto" | "x" | "y" | "z";
+
 export type PackBlock = {
 	id: string,
 	groupIds: string[],
 	envelope: Box3D,
 };
+
+export type PackFace = "positive-x" | "negative-x" | "positive-y" | "negative-y";
 
 export type PackPlan = {
 	id: string,
@@ -171,9 +192,27 @@ export type PackPlan = {
 	metrics: LayoutMetrics,
 };
 
+export type PackRequest = {
+	seriesCount: number,
+	parallelCount: number,
+	cellId: string,
+	orientation: OrientationRequest,
+	packingModes: PackingMode[],
+	maxLayers: number,
+	targetCenterOfMassXmm: number,
+	toleranceStack: ToleranceLayer[],
+	wiringExitMode: WiringExitMode,
+	serviceReservations: ServiceReservation[],
+};
+
 export type PackingMode = "brick" | "staggered";
 
 export type PlacementAnchor = "tail" | "center" | "nose" | "profile";
+
+export type PlannerConfig = {
+	enclosure: EnclosureSpec,
+	pack: PackRequest,
+};
 
 export type ProceduralStyle = "finned-case" | "sealed-case" | "pcb";
 
@@ -186,6 +225,16 @@ export type SeriesGroup = {
 };
 
 export type ServiceKind = "wiring-exit" | "balance-harness" | "power-output";
+
+export type ServiceReservation = {
+	id: string,
+	label: string,
+	kind: ServiceKind,
+	face: PackFace,
+	sizeMm: [number, number, number],
+	offsetMm?: [number, number, number] | null,
+	enabled: boolean,
+};
 
 export type ServiceVolume = {
 	id: string,
@@ -201,12 +250,29 @@ export type SourceMetadata = {
 	dimensionBasis: string,
 };
 
+export type ToleranceApplication = "radial" | "axial-ends" | "between-cells" | "between-layers" | "between-groups" | "all-faces";
+
+export type ToleranceKind = "nickel" | "fishpaper" | "compound" | "holder" | "outer-wrap";
+
+export type ToleranceLayer = {
+	id: string,
+	label: string,
+	kind: ToleranceKind,
+	scope: ToleranceScope,
+	application: ToleranceApplication,
+	thicknessMm: number,
+};
+
+export type ToleranceScope = "cell" | "series-group" | "pack-block";
+
 export type VisualAssetSource = {
 	url: string,
 	creator: string,
 	license: string,
 	licenseUrl: string,
 };
+
+export type WiringExitMode = "combined" | "separate";
 
 export type WorkspaceEvaluation = {
 	components: ComponentEvaluation[],

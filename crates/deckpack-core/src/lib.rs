@@ -7,7 +7,10 @@
 pub mod assets;
 pub mod geometry;
 pub mod heightmap;
+pub mod jsmath;
 pub mod library;
+pub mod packing;
+pub mod service;
 pub mod types;
 
 pub use types::*;
