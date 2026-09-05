@@ -21,6 +21,16 @@ export const commands = {
 	 *  drops stale responses by request id.
 	 */
 	enumeratePlans: (request: EnumerationRequest) => typedError<EnumerationResponse, string>(__TAURI_INVOKE("enumerate_plans", { request: ({...request,config:({...request.config,pack:({...request.config.pack,toleranceStack:request.config.pack.toleranceStack.map(i=>i),serviceReservations:request.config.pack.serviceReservations.map(i=>({...i,sizeMm:i.sizeMm.map(i=>i),offsetMm:i.offsetMm==null?i.offsetMm:i.offsetMm.map(i=>i)}))})}),cell:({...request.cell,bareDiameterMm:request.cell.bareDiameterMm==null?request.cell.bareDiameterMm:request.cell.bareDiameterMm,bareHeightMm:request.cell.bareHeightMm==null?request.cell.bareHeightMm:request.cell.bareHeightMm})}) })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,plans:v.data.plans.map(i=>({...i,cellSizeMm:i.cellSizeMm.map(i=>i),cells:i.cells.map(i=>({...i,position:i.position.map(i=>i)})),groups:i.groups.map(i=>({...i,center:i.center.map(i=>i)})),seriesPath:i.seriesPath.map(i=>i.map(i=>i)),blocks:i.blocks.map(i=>({...i,envelope:({...i.envelope,min:i.envelope.min.map(i=>i),max:i.envelope.max.map(i=>i)})})),serviceVolumes:i.serviceVolumes.map(i=>({...i,box:({...i.box,min:i.box.min.map(i=>i),max:i.box.max.map(i=>i)})})),bounds:({...i.bounds,min:i.bounds.min.map(i=>i),max:i.bounds.max.map(i=>i)}),metrics:({...i.metrics,largestFreeBox:({...i.metrics.largestFreeBox,box:({...i.metrics.largestFreeBox.box,min:i.metrics.largestFreeBox.box.min.map(i=>i),max:i.metrics.largestFreeBox.box.max.map(i=>i)})})})}))}) } : v) as typeof v)),
+	/**
+	 *  Wave-comb profiles of the holder for the plan; the scene extrudes them
+	 *  into a preview mesh.
+	 */
+	holderPieces: (plan: PackPlan, cell: CellSpec, toleranceStack: ToleranceLayer[], enclosure: EnclosureSpec, options: HolderOptions) => typedError<HolderPieces, string>(__TAURI_INVOKE("holder_pieces", { plan: ({...plan,cellSizeMm:plan.cellSizeMm.map(i=>i),cells:plan.cells.map(i=>({...i,position:i.position.map(i=>i)})),groups:plan.groups.map(i=>({...i,center:i.center.map(i=>i)})),seriesPath:plan.seriesPath.map(i=>i.map(i=>i)),blocks:plan.blocks.map(i=>({...i,envelope:({...i.envelope,min:i.envelope.min.map(i=>i),max:i.envelope.max.map(i=>i)})})),serviceVolumes:plan.serviceVolumes.map(i=>({...i,box:({...i.box,min:i.box.min.map(i=>i),max:i.box.max.map(i=>i)})})),bounds:({...plan.bounds,min:plan.bounds.min.map(i=>i),max:plan.bounds.max.map(i=>i)}),metrics:({...plan.metrics,largestFreeBox:({...plan.metrics.largestFreeBox,box:({...plan.metrics.largestFreeBox.box,min:plan.metrics.largestFreeBox.box.min.map(i=>i),max:plan.metrics.largestFreeBox.box.max.map(i=>i)})})})}), cell: ({...cell,bareDiameterMm:cell.bareDiameterMm==null?cell.bareDiameterMm:cell.bareDiameterMm,bareHeightMm:cell.bareHeightMm==null?cell.bareHeightMm:cell.bareHeightMm}), toleranceStack: toleranceStack.map(i=>i), enclosure, options })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,pieces:v.data.pieces.map(i=>({...i,t:i.t.map(i=>i),top:i.top.map(i=>i),bottom:i.bottom.map(i=>i)}))}) } : v) as typeof v)),
+	/**
+	 *  Generate the holder STL and write it to `path` (chosen by the user
+	 *  through the native save dialog).
+	 */
+	exportHolderStl: (plan: PackPlan, cell: CellSpec, toleranceStack: ToleranceLayer[], enclosure: EnclosureSpec, options: HolderOptions, path: string) => typedError<HolderExport, string>(__TAURI_INVOKE("export_holder_stl", { plan: ({...plan,cellSizeMm:plan.cellSizeMm.map(i=>i),cells:plan.cells.map(i=>({...i,position:i.position.map(i=>i)})),groups:plan.groups.map(i=>({...i,center:i.center.map(i=>i)})),seriesPath:plan.seriesPath.map(i=>i.map(i=>i)),blocks:plan.blocks.map(i=>({...i,envelope:({...i.envelope,min:i.envelope.min.map(i=>i),max:i.envelope.max.map(i=>i)})})),serviceVolumes:plan.serviceVolumes.map(i=>({...i,box:({...i.box,min:i.box.min.map(i=>i),max:i.box.max.map(i=>i)})})),bounds:({...plan.bounds,min:plan.bounds.min.map(i=>i),max:plan.bounds.max.map(i=>i)}),metrics:({...plan.metrics,largestFreeBox:({...plan.metrics.largestFreeBox,box:({...plan.metrics.largestFreeBox.box,min:plan.metrics.largestFreeBox.box.min.map(i=>i),max:plan.metrics.largestFreeBox.box.max.map(i=>i)})})})}), cell: ({...cell,bareDiameterMm:cell.bareDiameterMm==null?cell.bareDiameterMm:cell.bareDiameterMm,bareHeightMm:cell.bareHeightMm==null?cell.bareHeightMm:cell.bareHeightMm}), toleranceStack: toleranceStack.map(i=>i), enclosure, options, path })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,pieces:v.data.pieces.map(i=>({...i,sizeMm:i.sizeMm.map(i=>i)}))}) } : v) as typeof v)),
 };
 
 /* Types */
@@ -143,6 +153,45 @@ export type HeightMapAsset = {
 
 export type HeightMapKind = "mesh-heightmap";
 
+export type HolderExport = {
+	pieces: HolderPieceSummary[],
+	byteLength: number,
+	path: string,
+};
+
+export type HolderOptions = {
+	/**  Extra radius on top of the reserved cell radius so cells drop in. */
+	clearanceMm: number,
+	/**  Cylinder length left uncovered at each cell end for nickel strips. */
+	terminalMarginMm: number,
+	/**  Gap between laid-out pieces on the plate. */
+	layoutGapMm: number,
+	/**  Profile sampling step along the lateral axis. */
+	sampleStepMm: number,
+	style: HolderStyle,
+	/**  Band width along the cell axis for the "edge" style. */
+	edgeStripWidthMm: number,
+};
+
+export type HolderPieceSummary = {
+	label: string,
+	triangleCount: number,
+	sizeMm: [number, number, number],
+	minWallMm: number,
+};
+
+export type HolderPieces = {
+	pieces: ProfilePiece[],
+	axialIndex: number,
+	lateralIndex: number,
+};
+
+export type HolderStyle = 
+/**  One wide belt per row holds the cells at mid-length. */
+"full" | 
+/**  Narrow bands near each cell end, like commercial modular holders. */
+"edge";
+
 export type LargestFreeBox = {
 	box: Box3D,
 	volumeMm3: number,
@@ -215,6 +264,22 @@ export type PlannerConfig = {
 };
 
 export type ProceduralStyle = "finned-case" | "sealed-case" | "pcb";
+
+/**
+ *  One printable comb: a wave profile in the (lateral, z) plane extruded
+ *  along the cell axis.
+ */
+export type ProfilePiece = {
+	label: string,
+	/**  Sampled lateral coordinates. */
+	t: number[],
+	top: number[],
+	bottom: number[],
+	/**  Extrusion length along the cell axis. */
+	lengthMm: number,
+	/**  Axial center of the cell row this piece belongs to. */
+	axialCenterMm: number,
+};
 
 export type SeriesGroup = {
 	id: string,

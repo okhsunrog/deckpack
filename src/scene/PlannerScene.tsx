@@ -30,12 +30,9 @@ import {
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { getHeightMapAsset } from "../data/enclosures";
 import { boxCenter, boxSize, componentBox } from "../domain/geometry";
-import {
-  assembledPieceTriangles,
-  computeHolderPieces,
-  DEFAULT_HOLDER_OPTIONS,
-  type HolderStyle,
-} from "../domain/holder";
+import type { HolderStyle } from "../domain/holder";
+import { assembledPieceTriangles } from "./holder-mesh";
+import { DEFAULT_HOLDER_OPTIONS, useHolderPieces } from "./use-holder-pieces";
 import type {
   Box3D,
   CellSpec,
@@ -310,14 +307,12 @@ function HolderObjects({
   enclosure: EnclosureSpec;
   style: HolderStyle;
 }) {
+  const options = useMemo(() => ({ ...DEFAULT_HOLDER_OPTIONS, style }), [style]);
+  const layout = useHolderPieces(plan, cell, toleranceStack, enclosure, options);
   const geometry = useDisposable(
     useMemo(() => {
       const result = new BufferGeometry();
-      if (plan.orientation === "z") return result;
-      const layout = computeHolderPieces(plan, cell, toleranceStack, enclosure, {
-        ...DEFAULT_HOLDER_OPTIONS,
-        style,
-      });
+      if (!layout) return result;
       const positions: number[] = [];
       for (const piece of layout.pieces) {
         positions.push(...assembledPieceTriangles(piece, layout));
@@ -325,7 +320,7 @@ function HolderObjects({
       result.setAttribute("position", new Float32BufferAttribute(positions, 3));
       result.computeVertexNormals();
       return result;
-    }, [plan, cell, toleranceStack, enclosure, style]),
+    }, [layout]),
   );
   return (
     <group>

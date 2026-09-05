@@ -1,4 +1,6 @@
+import { save } from "@tauri-apps/plugin-dialog";
 import { useEffect } from "react";
+import { commands } from "./bindings";
 import "./App.css";
 import { ControlPanel } from "./components/ControlPanel";
 import { MetricsBar } from "./components/MetricsBar";
@@ -6,11 +8,11 @@ import { ResultsPanel } from "./components/ResultsPanel";
 import { useLayoutEngine } from "./components/use-layout-engine";
 import { useWorkspaceEvaluation } from "./components/use-workspace-evaluation";
 import { componentsLibrary, getCell } from "./data/library";
-import { DEFAULT_HOLDER_OPTIONS, generateHolder } from "./domain/holder";
 import { planSignature } from "./domain/packing";
 import { activeServiceReservations } from "./domain/service-reservations";
 import { saveFile } from "./platform/save-file";
 import { PlannerScene } from "./scene/PlannerScene";
+import { DEFAULT_HOLDER_OPTIONS } from "./scene/use-holder-pieces";
 import { usePlannerStore } from "./store/planner-store";
 import type { CellSpec, PackPlan } from "./domain/types";
 
@@ -34,21 +36,22 @@ function exportProject() {
 async function exportHolder(plan: PackPlan, cell: CellSpec) {
   const state = usePlannerStore.getState();
   try {
-    const build = generateHolder(
+    const path = await save({
+      defaultPath: `deckpack-holder-${plan.packingMode}.stl`,
+      filters: [{ name: "STL model", extensions: ["stl"] }],
+    });
+    if (!path) return;
+    const result = await commands.exportHolderStl(
       plan,
       cell,
       state.config.pack.toleranceStack,
       state.config.enclosure,
       { ...DEFAULT_HOLDER_OPTIONS, style: state.holderStyle },
+      path,
     );
-    const thinnest = Math.min(...build.pieces.map((piece) => piece.minWallMm));
-    const saved = await saveFile(build.stl, {
-      filename: `deckpack-holder-${plan.packingMode}.stl`,
-      mimeType: "model/stl",
-      filterName: "STL model",
-      extensions: ["stl"],
-    });
-    if (saved && thinnest < 0.4) {
+    if (result.status === "error") throw new Error(result.error);
+    const thinnest = Math.min(...result.data.pieces.map((piece) => piece.minWallMm));
+    if (thinnest < 0.4) {
       window.alert(
         `Внимание: минимальная стенка холдера ${thinnest.toFixed(2)} мм. ` +
           "Увеличьте слой «Стенка холдера» (staggered) или Group separator (brick).",

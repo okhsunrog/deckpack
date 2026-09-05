@@ -7,6 +7,7 @@
 pub mod assets;
 pub mod geometry;
 pub mod heightmap;
+pub mod holder;
 pub mod jsmath;
 pub mod library;
 pub mod packing;

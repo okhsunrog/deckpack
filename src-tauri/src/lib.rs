@@ -18,6 +18,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::enclosure_assets,
             commands::evaluate_workspace,
             commands::enumerate_plans,
+            commands::holder_pieces,
+            commands::export_holder_stl,
         ])
 }
 

@@ -2,9 +2,11 @@
 
 use deckpack_core::{
     CellSpec, ComponentPlacement, ComponentSpec, EnclosureSpec, EnumerationRequest,
-    EnumerationResponse, HeightMapAsset, PackPlan, WorkspaceEvaluation, assets, geometry, library,
-    packing,
+    EnumerationResponse, HeightMapAsset, HolderOptions, HolderPieceSummary, HolderPieces, PackPlan,
+    ToleranceLayer, WorkspaceEvaluation, assets, geometry, holder, library, packing,
 };
+use serde::Serialize;
+use specta::Type;
 
 #[tauri::command]
 #[specta::specta]
@@ -48,4 +50,54 @@ pub async fn enumerate_plans(request: EnumerationRequest) -> Result<EnumerationR
     })
     .await
     .map_err(|error| format!("enumeration task failed: {error}"))?
+}
+
+/// Wave-comb profiles of the holder for the plan; the scene extrudes them
+/// into a preview mesh.
+#[tauri::command]
+#[specta::specta]
+pub fn holder_pieces(
+    plan: PackPlan,
+    cell: CellSpec,
+    tolerance_stack: Vec<ToleranceLayer>,
+    enclosure: EnclosureSpec,
+    options: HolderOptions,
+) -> Result<HolderPieces, String> {
+    holder::compute_holder_pieces(&plan, &cell, &tolerance_stack, &enclosure, &options)
+        .map_err(|error| error.to_string())
+}
+
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct HolderExport {
+    pub pieces: Vec<HolderPieceSummary>,
+    pub byte_length: u32,
+    pub path: String,
+}
+
+/// Generate the holder STL and write it to `path` (chosen by the user
+/// through the native save dialog).
+#[tauri::command]
+#[specta::specta]
+pub async fn export_holder_stl(
+    plan: PackPlan,
+    cell: CellSpec,
+    tolerance_stack: Vec<ToleranceLayer>,
+    enclosure: EnclosureSpec,
+    options: HolderOptions,
+    path: String,
+) -> Result<HolderExport, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let build = holder::generate_holder(&plan, &cell, &tolerance_stack, &enclosure, &options)
+            .map_err(|error| error.to_string())?;
+        std::fs::write(&path, &build.stl)
+            .map_err(|error| format!("cannot write {path}: {error}"))?;
+        Ok(HolderExport {
+            pieces: build.pieces,
+            byte_length: build.stl.len() as u32,
+            path,
+        })
+    })
+    .await
+    .map_err(|error| format!("holder export task failed: {error}"))?
 }
