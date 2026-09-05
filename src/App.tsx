@@ -9,19 +9,10 @@ import { evaluateWorkspace } from "./domain/geometry";
 import { DEFAULT_HOLDER_OPTIONS, generateHolder } from "./domain/holder";
 import { planSignature } from "./domain/packing";
 import { activeServiceReservations } from "./domain/service-reservations";
+import { saveFile } from "./platform/save-file";
 import { PlannerScene } from "./scene/PlannerScene";
 import { usePlannerStore } from "./store/planner-store";
 import type { CellSpec, PackPlan } from "./domain/types";
-
-function download(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.click();
-  // Revoking synchronously can cancel the download in some browsers.
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
 
 function exportProject() {
   const state = usePlannerStore.getState();
@@ -30,10 +21,17 @@ function exportProject() {
     null,
     2,
   );
-  download(new Blob([payload], { type: "application/json" }), "deckpack-project.json");
+  void saveFile(payload, {
+    filename: "deckpack-project.json",
+    mimeType: "application/json",
+    filterName: "Deckpack project",
+    extensions: ["json"],
+  }).catch((error: unknown) => {
+    window.alert(`Не удалось сохранить проект: ${(error as Error).message}`);
+  });
 }
 
-function exportHolder(plan: PackPlan, cell: CellSpec) {
+async function exportHolder(plan: PackPlan, cell: CellSpec) {
   const state = usePlannerStore.getState();
   try {
     const build = generateHolder(
@@ -44,11 +42,13 @@ function exportHolder(plan: PackPlan, cell: CellSpec) {
       { ...DEFAULT_HOLDER_OPTIONS, style: state.holderStyle },
     );
     const thinnest = Math.min(...build.pieces.map((piece) => piece.minWallMm));
-    download(
-      new Blob([build.stl], { type: "model/stl" }),
-      `deckpack-holder-${plan.packingMode}.stl`,
-    );
-    if (thinnest < 0.4) {
+    const saved = await saveFile(build.stl, {
+      filename: `deckpack-holder-${plan.packingMode}.stl`,
+      mimeType: "model/stl",
+      filterName: "STL model",
+      extensions: ["stl"],
+    });
+    if (saved && thinnest < 0.4) {
       window.alert(
         `Внимание: минимальная стенка холдера ${thinnest.toFixed(2)} мм. ` +
           "Увеличьте слой «Стенка холдера» (staggered) или Group separator (brick).",
@@ -151,7 +151,7 @@ function App() {
             type="button"
             disabled={!selectedPlan || selectedPlan.orientation === "z"}
             title="STL волновых ложементов под выбранную раскладку"
-            onClick={() => selectedPlan && exportHolder(selectedPlan, cell)}
+            onClick={() => selectedPlan && void exportHolder(selectedPlan, cell)}
           >
             Холдер STL
           </button>

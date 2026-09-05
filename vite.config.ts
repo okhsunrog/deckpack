@@ -2,11 +2,27 @@ import { defineConfig, lazyPlugins } from "vite-plus";
 import react from "@vitejs/plugin-react";
 
 // https://vite.dev/config/
+// Set by `tauri dev` when targeting a mobile device so the webview can reach
+// the dev server over the network.
+const tauriDevHost = process.env.TAURI_DEV_HOST;
+
 export default defineConfig({
+  // Keep Rust compiler output visible when running under `tauri dev`.
+  clearScreen: false,
+  // Expose TAURI_ENV_* (platform, arch, debug) to the frontend alongside VITE_*.
+  envPrefix: ["VITE_", "TAURI_ENV_*"],
   server: {
     // Honor a harness-assigned port (e.g. IDE preview) instead of always
     // auto-incrementing from 5173.
     port: Number(process.env.PORT) || 5173,
+    // `tauri dev` points the webview at a fixed devUrl, so never drift.
+    strictPort: true,
+    host: tauriDevHost || false,
+    hmr: tauriDevHost ? { protocol: "ws", host: tauriDevHost, port: 5174 } : undefined,
+    watch: {
+      // Cargo build artifacts must not trigger frontend reloads.
+      ignored: ["**/src-tauri/**"],
+    },
   },
   staged: {
     "*": "vp check --fix",

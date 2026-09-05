@@ -2,13 +2,22 @@
 
 Desktop-first 3D planner for electric-longboard enclosure internals. It exhaustively enumerates geometric layouts for an `nSmP` cylindrical-cell pack, ranks feasible variants, and lets the user place ESC, BMS, antispark, and custom blocks inside the enclosure.
 
-The app is a static frontend. Project inputs and placed components stay in `localStorage` and can be exported as JSON.
+The app is a static frontend wrapped in a [Tauri 2](https://tauri.app) desktop shell. Project inputs and placed components stay in `localStorage` and can be exported as JSON; in the desktop build exports go through the native "Save as" dialog.
 
 ## Development
+
+Browser-only workflow:
 
 ```bash
 vp install
 vp dev
+```
+
+Desktop app (needs a Rust toolchain and the [Tauri system prerequisites](https://tauri.app/start/prerequisites/)):
+
+```bash
+vp run tauri dev     # dev server + native window with hot reload
+vp run tauri build   # release binary and installers in src-tauri/target/release/bundle
 ```
 
 Validation:
@@ -17,7 +26,18 @@ Validation:
 vp check
 vp test
 vp build
+cargo check --manifest-path src-tauri/Cargo.toml
 ```
+
+### AI-assisted debugging (MCP)
+
+Debug builds register [`tauri-plugin-mcp-bridge`](https://github.com/hypothesi/mcp-server-tauri), which opens a local WebSocket on `127.0.0.1:9223` so an MCP client can inspect and drive the running app (DOM, screenshots, console, IPC). Release builds do not include it. Point your assistant at the server with:
+
+```bash
+claude mcp add --scope user tauri -- npx -y @hypothesi/tauri-mcp-server
+```
+
+Then run `vp run tauri dev` and use the `tauri` MCP tools.
 
 ## Geometry model
 
