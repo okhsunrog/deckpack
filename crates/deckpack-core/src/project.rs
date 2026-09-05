@@ -86,7 +86,15 @@ pub fn default_tolerance_stack() -> Vec<ToleranceLayer> {
             "Стенка холдера",
             K::Holder,
             S::Cell,
-            A::BetweenCells,
+            A::BetweenColumns,
+            1.2,
+        ),
+        layer(
+            "spacer-wall",
+            "Стенка спейсера",
+            K::Holder,
+            S::SeriesGroup,
+            A::BetweenRows,
             1.2,
         ),
         layer(
@@ -181,12 +189,6 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
         let recorded: PlannerConfig =
             serde_json::from_value(fixture["request"]["config"].clone()).unwrap();
-        // The holder floor layer was added after the fixtures were recorded.
-        let mut config = default_config();
-        config
-            .pack
-            .tolerance_stack
-            .retain(|layer| layer.application != ToleranceApplication::Floor);
-        assert_eq!(config, recorded);
+        assert_eq!(default_config(), recorded);
     }
 }

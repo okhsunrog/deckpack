@@ -36,20 +36,44 @@ const ROUTE_ORDERS: [[usize; 3]; 6] = [
     [2, 1, 0],
 ];
 
-fn hex_row_factor() -> f64 {
-    3.0f64.sqrt() / 2.0
-}
-
 #[derive(Clone, Copy, Debug)]
 struct CompiledTolerances {
     radial: f64,
     axial_per_end: f64,
+    /// Between any two touching cells (compound).
     between_cells: f64,
+    /// Between neighbours of one row / brick grid only (holder wall).
+    between_columns: f64,
+    /// Between nested cells of adjacent staggered rows only (spacer web).
+    between_rows: f64,
+    /// Extra vertical lift of every staggered row.
     between_layers: f64,
     between_groups: f64,
     outer_wrap: f64,
     /// Lift of the whole pack above the enclosure floor (holder base).
     floor: f64,
+}
+
+impl CompiledTolerances {
+    /// Centre-to-centre gap between neighbours along a row or brick grid.
+    fn lattice_gap(&self) -> f64 {
+        self.between_cells + self.between_columns
+    }
+
+    /// Centre-to-centre gap between nested cells of adjacent staggered rows.
+    fn nesting_gap(&self) -> f64 {
+        self.between_cells + self.between_rows
+    }
+
+    /// Row pitch of a staggered lattice: the upper cell sits half a lateral
+    /// pitch aside and at the nesting contact distance from both lower
+    /// neighbours, plus any explicit layer lift. With equal lattice and
+    /// nesting gaps this is the hex pitch·√3/2.
+    fn stagger_row_pitch(&self, reservation_diameter: f64, lateral_pitch: f64) -> f64 {
+        let contact = reservation_diameter + self.nesting_gap();
+        let half = lateral_pitch / 2.0;
+        (contact * contact - half * half).max(0.0).sqrt() + self.between_layers
+    }
 }
 
 pub fn sum_tolerance(stack: &[ToleranceLayer], application: ToleranceApplication) -> f64 {
@@ -64,6 +88,8 @@ fn compile_tolerances(stack: &[ToleranceLayer]) -> CompiledTolerances {
         radial: sum_tolerance(stack, ToleranceApplication::Radial),
         axial_per_end: sum_tolerance(stack, ToleranceApplication::AxialEnds),
         between_cells: sum_tolerance(stack, ToleranceApplication::BetweenCells),
+        between_columns: sum_tolerance(stack, ToleranceApplication::BetweenColumns),
+        between_rows: sum_tolerance(stack, ToleranceApplication::BetweenRows),
         between_layers: sum_tolerance(stack, ToleranceApplication::BetweenLayers),
         between_groups: sum_tolerance(stack, ToleranceApplication::BetweenGroups),
         outer_wrap: sum_tolerance(stack, ToleranceApplication::AllFaces),
@@ -122,9 +148,15 @@ fn make_group_template(
             actual_cell_size[axis] + tolerances.radial * 2.0
         };
     }
-    let pitch = reservation_cell_size.map(|value| value + tolerances.between_cells);
+    let pitch = reservation_cell_size.map(|value| value + tolerances.lattice_gap());
     let row_axis = stagger_row_axis.map(Axis::index);
     let shift_axis = (0..3).find(|axis| *axis != axial && Some(*axis) != row_axis);
+    let row_pitch = match (row_axis, shift_axis) {
+        (Some(row), Some(shift)) => {
+            tolerances.stagger_row_pitch(reservation_cell_size[row], pitch[shift])
+        }
+        _ => 0.0,
+    };
 
     let mut centers = Vec::new();
     for x in 0..factors[0] {
@@ -135,10 +167,7 @@ fn make_group_template(
                 if let (PackingMode::Staggered, Some(row), Some(shift)) =
                     (mode, row_axis, shift_axis)
                 {
-                    // Hex nesting pitch, optionally relaxed vertically by the
-                    // between-layers tolerance so holder walls can be thickened.
-                    position[row] =
-                        grid[row] * (pitch[row] * hex_row_factor() + tolerances.between_layers);
+                    position[row] = grid[row] * row_pitch;
                     position[shift] += (grid[row] % 2.0) * pitch[shift] * 0.5;
                 }
                 centers.push(position);
@@ -1100,7 +1129,10 @@ fn run_task(context: &Context<'_>, task: Task) -> (Vec<PackPlan>, u32) {
         Some(CrossGroupStagger {
             row_axis: row,
             shift_axis: shift,
-            row_pitch_mm: template.cell_pitch[row] * hex_row_factor() + tolerance.between_layers,
+            row_pitch_mm: tolerance.stagger_row_pitch(
+                template.reservation_cell_size[row],
+                template.cell_pitch[shift],
+            ),
             shift_mm: template.cell_pitch[shift] / 2.0,
         })
     } else {
@@ -1419,6 +1451,77 @@ mod tests {
         unique.sort();
         unique.dedup();
         assert_eq!(unique.len(), factors.len());
+    }
+
+    /// Distance from every upper-row cell to its nearest lower-row cell.
+    fn nesting_distances(stack: Vec<ToleranceLayer>) -> (f64, Vec<f64>) {
+        use crate::project::{box_enclosure, default_config};
+        let mut config = default_config();
+        config.enclosure = box_enclosure(400.0, 200.0, 60.0);
+        config.pack.orientation = OrientationRequest::Y;
+        config.pack.packing_modes = vec![PackingMode::Staggered];
+        config.pack.tolerance_stack = stack;
+        let cell = crate::library::cell(&config.pack.cell_id).clone();
+        let response = enumerate_pack_plans(&EnumerationRequest {
+            config,
+            cell: cell.clone(),
+        })
+        .unwrap();
+        let plan = response
+            .plans
+            .iter()
+            .find(|plan| plan.stagger_row_axis == Some(Axis::Z) && plan.metrics.layer_count == 2)
+            .expect("a two-layer staggered plan");
+        let lower: Vec<Vec3> = plan
+            .cells
+            .iter()
+            .filter(|c| c.layer == 0)
+            .map(|c| c.position)
+            .collect();
+        let distances = plan
+            .cells
+            .iter()
+            .filter(|c| c.layer == 1)
+            .map(|upper| {
+                lower
+                    .iter()
+                    .map(|low| distance(*low, upper.position))
+                    .fold(f64::INFINITY, f64::min)
+            })
+            .collect();
+        (cell.sleeved_diameter_mm, distances)
+    }
+
+    #[test]
+    fn spacer_wall_sets_the_nesting_distance_between_staggered_rows() {
+        let stack = crate::project::default_tolerance_stack();
+        let radial = sum_tolerance(&stack, ToleranceApplication::Radial);
+        let compound = sum_tolerance(&stack, ToleranceApplication::BetweenCells);
+        let holder_wall = sum_tolerance(&stack, ToleranceApplication::BetweenColumns);
+        let spacer_wall = sum_tolerance(&stack, ToleranceApplication::BetweenRows);
+        assert!(holder_wall > 0.0 && spacer_wall > 0.0);
+
+        // With a spacer the upper row touches the lower one through its web.
+        let (diameter, with_spacer) = nesting_distances(stack.clone());
+        for d in &with_spacer {
+            assert!((d - (diameter + 2.0 * radial + compound + spacer_wall)).abs() < 1e-6);
+        }
+
+        // Without it the rows nest at the compound gap, closer than the
+        // lateral pitch that still carries the holder wall.
+        let mut bare = stack;
+        for layer in &mut bare {
+            if layer.application == ToleranceApplication::BetweenRows {
+                layer.thickness_mm = 0.0;
+            }
+        }
+        let (_, nested) = nesting_distances(bare);
+        for d in &nested {
+            assert!(
+                (d - (diameter + 2.0 * radial + compound)).abs() < 1e-6,
+                "{d}"
+            );
+        }
     }
 
     #[test]

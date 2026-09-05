@@ -15,6 +15,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
         // Millimetres are plain `number`s; NaN/Infinity never cross the IPC.
         .semantic_types(semantic::Configuration::default().enable_lossless_floats())
         .commands(collect_commands![
+            commands::default_config,
             commands::cell_library,
             commands::component_library,
             commands::enclosure_assets,

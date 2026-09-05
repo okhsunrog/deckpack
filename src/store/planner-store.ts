@@ -1,9 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import {
-  createDefaultServiceReservations,
-  setWiringExitMode as updateWiringExitMode,
-} from "./service-reservations";
+import { setWiringExitMode as updateWiringExitMode } from "./service-reservations";
+import { getDefaultConfig } from "../data/defaults";
 import { createMeshEnclosure, createSparkCaseEnclosure } from "../data/enclosures";
 import { sanitizePersistedConfig, sanitizePersistedPlacements } from "./persisted-state";
 import type {
@@ -21,90 +19,6 @@ import type {
   HolderOptions,
 } from "../bindings";
 import { DEFAULT_HOLDER_OPTIONS, type HolderSettings } from "../scene/holder-mesh";
-
-export const defaultConfig: PlannerConfig = {
-  enclosure: createSparkCaseEnclosure(),
-  pack: {
-    seriesCount: 12,
-    parallelCount: 3,
-    cellId: "eve-50pl",
-    orientation: "auto",
-    packingModes: ["brick", "staggered"],
-    maxLayers: 2,
-    targetCenterOfMassXmm: 0,
-    toleranceStack: [
-      {
-        id: "nickel",
-        label: "Nickel at terminals",
-        kind: "nickel",
-        scope: "cell",
-        application: "axial-ends",
-        thicknessMm: 0.2,
-      },
-      {
-        id: "fishpaper",
-        label: "Fishpaper around cells",
-        kind: "fishpaper",
-        scope: "cell",
-        application: "radial",
-        thicknessMm: 0.2,
-      },
-      {
-        id: "compound",
-        label: "Compound / cell gap",
-        kind: "compound",
-        scope: "cell",
-        application: "between-cells",
-        thicknessMm: 0.2,
-      },
-      {
-        id: "holder-wall",
-        label: "Стенка холдера",
-        kind: "holder",
-        scope: "cell",
-        application: "between-cells",
-        thicknessMm: 1.2,
-      },
-      {
-        id: "layer-lift",
-        label: "Подъём слоя (staggered)",
-        kind: "holder",
-        scope: "series-group",
-        application: "between-layers",
-        thicknessMm: 0,
-      },
-      {
-        id: "holder-floor",
-        label: "Дно холдера",
-        kind: "holder",
-        scope: "pack-block",
-        application: "floor",
-        thicknessMm: 0,
-      },
-      {
-        id: "group-separator",
-        label: "Group separator",
-        kind: "fishpaper",
-        scope: "series-group",
-        application: "between-groups",
-        thicknessMm: 1.4,
-      },
-      {
-        id: "outer-wrap",
-        label: "Outer wrap",
-        kind: "outer-wrap",
-        scope: "pack-block",
-        application: "all-faces",
-        thicknessMm: 1,
-      },
-    ],
-    wiringExitMode: "combined",
-    serviceReservations: createDefaultServiceReservations().map((reservation) => ({
-      ...reservation,
-      enabled: false,
-    })),
-  },
-};
 
 interface PlannerState {
   config: PlannerConfig;
@@ -134,6 +48,8 @@ interface PlannerState {
   setRightPanel: (panel: "variants" | "components") => void;
   setShowHolders: (show: boolean) => void;
   setHolderOptions: (patch: Partial<HolderOptions>) => void;
+  /** Interlayer spacers: sets the spacer-wall layer to the holder wall thickness, or to 0 so the rows nest. */
+  setSpacers: (enabled: boolean) => void;
   setHolderCsg: (patch: Partial<HolderCsg>) => void;
   /** Add a component at the suggested spot, or at the tail if none was found. */
   addComponent: (
@@ -146,7 +62,20 @@ interface PlannerState {
 }
 
 function freshConfig(): PlannerConfig {
-  return structuredClone(defaultConfig);
+  return getDefaultConfig();
+}
+
+/** Nested staggered rows are held apart by a spacer only while its wall layer has thickness. */
+export function spacersEnabled(stack: ToleranceLayer[]): boolean {
+  return stack.some((layer) => layer.application === "between-rows" && layer.thicknessMm > 0);
+}
+
+/** Holder options as sent to the core: the spacer switch is the spacer-wall layer. */
+export function resolveHolderOptions(state: {
+  holderOptions: HolderSettings;
+  config: PlannerConfig;
+}): HolderSettings {
+  return { ...state.holderOptions, spacers: spacersEnabled(state.config.pack.toleranceStack) };
 }
 
 export const usePlannerStore = create<PlannerState>()(
@@ -262,6 +191,25 @@ export const usePlannerStore = create<PlannerState>()(
       setShowHolders: (showHolders) => set({ showHolders }),
       setHolderOptions: (patch) =>
         set((state) => ({ holderOptions: { ...state.holderOptions, ...patch } })),
+      setSpacers: (enabled) =>
+        set((state) => {
+          const stack = state.config.pack.toleranceStack;
+          const wall = stack.find((layer) => layer.application === "between-columns");
+          const thickness = enabled ? wall?.thicknessMm || 1.2 : 0;
+          return {
+            config: {
+              ...state.config,
+              pack: {
+                ...state.config.pack,
+                toleranceStack: stack.map((layer) =>
+                  layer.application === "between-rows"
+                    ? { ...layer, thicknessMm: thickness }
+                    : layer,
+                ),
+              },
+            },
+          };
+        }),
       setHolderCsg: (patch) => set((state) => ({ holderCsg: { ...state.holderCsg, ...patch } })),
       setSelectedComponentId: (selectedComponentId) => set({ selectedComponentId }),
       setRightPanel: (rightPanel) => set({ rightPanel }),
@@ -334,7 +282,10 @@ export const usePlannerStore = create<PlannerState>()(
           holderCsg: unknown;
           projectPath: unknown;
         }>;
-        const config = sanitizePersistedConfig(stored.config);
+        const holderOptions = sanitizeHolderOptions(stored.holderOptions, stored.holderStyle);
+        const config = sanitizePersistedConfig(stored.config, {
+          spacers: legacySpacers(stored.holderOptions),
+        });
         const placements = sanitizePersistedPlacements(stored.placements);
         return {
           ...current,
@@ -344,7 +295,7 @@ export const usePlannerStore = create<PlannerState>()(
             typeof stored.selectedPlanId === "string" ? stored.selectedPlanId : undefined,
           selectedPlanKey:
             typeof stored.selectedPlanKey === "string" ? stored.selectedPlanKey : undefined,
-          holderOptions: sanitizeHolderOptions(stored.holderOptions, stored.holderStyle),
+          holderOptions,
           holderCsg: {
             rails: (stored.holderCsg as { rails?: unknown } | undefined)?.rails === true,
           },
@@ -374,6 +325,15 @@ function placementId(): string {
 
 export function toleranceById(stack: ToleranceLayer[], id: string) {
   return stack.find((layer) => layer.id === id);
+}
+
+/** The holder "spacers" switch stored before the spacer-wall tolerance layer existed. */
+function legacySpacers(stored: unknown): boolean | undefined {
+  if (stored && typeof stored === "object" && "spacers" in stored) {
+    const value = (stored as { spacers: unknown }).spacers;
+    return typeof value === "boolean" ? value : undefined;
+  }
+  return undefined;
 }
 
 /** Stored holder options merged over the defaults; legacy `holderStyle` is honoured. */

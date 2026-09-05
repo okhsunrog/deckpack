@@ -169,7 +169,9 @@ struct HolderArgs {
     /// Add end rails (with screw holes) to the CSG pieces.
     #[arg(long, requires = "csg")]
     rails: bool,
-    /// Skip the interlayer spacers: cradles only.
+    /// No interlayer spacers: the between-rows tolerance layers are zeroed so
+    /// the upper rows nest directly in the lower ones, and only cradles are
+    /// generated.
     #[arg(long)]
     no_spacers: bool,
     /// Thin web thickness in millimetres where no cell is near.
@@ -518,7 +520,14 @@ fn evaluate(args: EvaluateArgs) -> Result<()> {
 }
 
 fn holder(args: HolderArgs) -> Result<()> {
-    let config = build_config(&args.config)?;
+    let mut config = build_config(&args.config)?;
+    if args.no_spacers {
+        for layer in &mut config.pack.tolerance_stack {
+            if layer.application == ToleranceApplication::BetweenRows {
+                layer.thickness_mm = 0.0;
+            }
+        }
+    }
     let response = enumerate(&config)?;
     let plan = select_plan(&response.plans, &args.plan)?;
     let cell = library::cell(&config.pack.cell_id);

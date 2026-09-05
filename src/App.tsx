@@ -1,5 +1,5 @@
 import { save } from "@tauri-apps/plugin-dialog";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { commands } from "./bindings";
 import "./App.css";
 import { ControlPanel } from "./components/ControlPanel";
@@ -10,7 +10,7 @@ import { useLayoutEngine } from "./components/use-layout-engine";
 import { useWorkspaceEvaluation } from "./components/use-workspace-evaluation";
 import { componentsLibrary, getCell } from "./data/library";
 import { PlannerScene } from "./scene/PlannerScene";
-import { usePlannerStore } from "./store/planner-store";
+import { resolveHolderOptions, spacersEnabled, usePlannerStore } from "./store/planner-store";
 import type { CellSpec, PackPlan } from "./bindings";
 import { planSignature } from "./lib/plan";
 import { projectName } from "./lib/project";
@@ -29,7 +29,7 @@ async function exportHolder(plan: PackPlan, cell: CellSpec) {
       cell,
       state.config.pack.toleranceStack,
       state.config.enclosure,
-      state.holderOptions,
+      resolveHolderOptions(state),
       state.holderCsg,
       path,
     );
@@ -61,7 +61,12 @@ function App() {
   const resetProject = usePlannerStore((state) => state.resetProject);
   const showHolders = usePlannerStore((state) => state.showHolders);
   const setShowHolders = usePlannerStore((state) => state.setShowHolders);
-  const holderOptions = usePlannerStore((state) => state.holderOptions);
+  const storedHolderOptions = usePlannerStore((state) => state.holderOptions);
+  const spacers = spacersEnabled(config.pack.toleranceStack);
+  const holderOptions = useMemo(
+    () => ({ ...storedHolderOptions, spacers }),
+    [storedHolderOptions, spacers],
+  );
   const holderCsg = usePlannerStore((state) => state.holderCsg);
   const projectPath = usePlannerStore((state) => state.projectPath);
   const setHolderOptions = usePlannerStore((state) => state.setHolderOptions);

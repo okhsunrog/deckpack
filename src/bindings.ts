@@ -6,6 +6,11 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 
 /** Commands */
 export const commands = {
+	/**
+	 *  What a new project starts from; the single source of the default
+	 *  tolerance stack and service reservations.
+	 */
+	defaultConfig: () => __TAURI_INVOKE<PlannerConfig>("default_config").then((v) => (({...v,pack:({...v.pack,toleranceStack:v.pack.toleranceStack.map(i=>i),serviceReservations:v.pack.serviceReservations.map(i=>({...i,sizeMm:i.sizeMm.map(i=>i),offsetMm:i.offsetMm==null?i.offsetMm:i.offsetMm.map(i=>i)}))})}) as typeof v)),
 	cellLibrary: () => __TAURI_INVOKE<CellSpec[]>("cell_library").then((v) => (v.map(i=>({...i,bareDiameterMm:i.bareDiameterMm==null?i.bareDiameterMm:i.bareDiameterMm,bareHeightMm:i.bareHeightMm==null?i.bareHeightMm:i.bareHeightMm})) as typeof v)),
 	componentLibrary: () => __TAURI_INVOKE<ComponentSpec[]>("component_library").then((v) => (v.map(i=>({...i,massG:i.massG==null?i.massG:i.massG,visual:i.visual==null?i.visual:i.visual})) as typeof v)),
 	enclosureAssets: () => __TAURI_INVOKE<HeightMapAsset[]>("enclosure_assets").then((v) => (v.map(i=>({...i,depthMap:({...i.depthMap,originMm:i.depthMap.originMm.map(i=>i)})})) as typeof v)),
@@ -363,7 +368,27 @@ export type SourceMetadata = {
 	dimensionBasis: string,
 };
 
-export type ToleranceApplication = "radial" | "axial-ends" | "between-cells" | "between-layers" | "between-groups" | "all-faces" | 
+export type ToleranceApplication = "radial" | "axial-ends" | 
+/**
+ *  Material between every pair of neighbouring cells, whatever direction
+ *  they touch in: along a row, stacked in a brick grid, or nested
+ *  diagonally between staggered rows (compound, glue gap).
+ */
+"between-cells" | 
+/**
+ *  Material between neighbours of the same row or brick grid only, e.g.
+ *  the cradle wall of a printed holder. Nested staggered rows do not see
+ *  it: they touch through `BetweenCells` and `BetweenRows`.
+ */
+"between-columns" | 
+/**
+ *  Material between the nested cells of adjacent staggered rows only,
+ *  e.g. the web of an interlayer spacer. At 0 the upper row rests
+ *  directly in the valleys of the lower one.
+ */
+"between-rows" | 
+/**  Extra vertical lift of every staggered row on top of the nesting pitch. */
+"between-layers" | "between-groups" | "all-faces" | 
 /**  Material under the whole pack, e.g. the base of a printed holder. */
 "floor";
 

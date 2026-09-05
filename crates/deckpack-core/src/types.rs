@@ -177,7 +177,19 @@ pub enum ToleranceScope {
 pub enum ToleranceApplication {
     Radial,
     AxialEnds,
+    /// Material between every pair of neighbouring cells, whatever direction
+    /// they touch in: along a row, stacked in a brick grid, or nested
+    /// diagonally between staggered rows (compound, glue gap).
     BetweenCells,
+    /// Material between neighbours of the same row or brick grid only, e.g.
+    /// the cradle wall of a printed holder. Nested staggered rows do not see
+    /// it: they touch through `BetweenCells` and `BetweenRows`.
+    BetweenColumns,
+    /// Material between the nested cells of adjacent staggered rows only,
+    /// e.g. the web of an interlayer spacer. At 0 the upper row rests
+    /// directly in the valleys of the lower one.
+    BetweenRows,
+    /// Extra vertical lift of every staggered row on top of the nesting pitch.
     BetweenLayers,
     BetweenGroups,
     AllFaces,

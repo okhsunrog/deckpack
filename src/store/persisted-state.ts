@@ -29,6 +29,8 @@ const toleranceLayerSchema = z.object({
     "radial",
     "axial-ends",
     "between-cells",
+    "between-columns",
+    "between-rows",
     "between-layers",
     "between-groups",
     "all-faces",
@@ -90,7 +92,10 @@ const placementSchema = z
  * render. References into the bundled libraries are re-checked so a removed
  * cell or enclosure asset cannot linger in a stored project.
  */
-export function sanitizePersistedConfig(value: unknown): PlannerConfig | undefined {
+export function sanitizePersistedConfig(
+  value: unknown,
+  legacy: { spacers?: boolean } = {},
+): PlannerConfig | undefined {
   const parsed = configSchema.safeParse(value);
   if (!parsed.success) return undefined;
   const config = parsed.data as PlannerConfig;
@@ -141,6 +146,30 @@ export function sanitizePersistedConfig(value: unknown): PlannerConfig | undefin
       scope: "cell",
       application: "between-cells",
       thicknessMm: 1.2,
+    });
+  }
+  // The holder wall used to be a between-cells layer, which also pushed the
+  // nested rows of a staggered lattice apart. It now applies along a row only
+  // and the nesting gap is its own spacer-wall layer, which the old holder
+  // "spacers" switch used to stand in for.
+  const stack = config.pack.toleranceStack;
+  if (!stack.some((layer) => layer.application === "between-columns")) {
+    for (const layer of stack) {
+      if (layer.kind === "holder" && layer.application === "between-cells") {
+        layer.application = "between-columns";
+      }
+    }
+  }
+  if (!stack.some((layer) => layer.application === "between-rows")) {
+    const wallIndex = stack.findIndex((layer) => layer.application === "between-columns");
+    const wall = stack[wallIndex];
+    stack.splice(wallIndex + 1, 0, {
+      id: "spacer-wall",
+      label: "Стенка спейсера",
+      kind: "holder",
+      scope: "series-group",
+      application: "between-rows",
+      thicknessMm: legacy.spacers === false ? 0 : (wall?.thicknessMm ?? 1.2),
     });
   }
   return config;

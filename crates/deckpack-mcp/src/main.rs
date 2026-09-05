@@ -26,7 +26,9 @@ enclosures. Start from `default_config`, adjust the PlannerConfig (cell id from 
 series/parallel counts, enclosure from `list_enclosures` or a `--box`-style EnclosureSpec), then call \
 `plan_pack` to enumerate and rank layouts. Use `get_plan` for the full cell positions of one layout, \
 `evaluate_layout` to check component placements against it, and `generate_holder` to write the \
-printable holder STL. All lengths are millimetres; X runs along the deck (tail → nose), Y across, Z up \
+printable holder STL. Tolerance layers apply by `application`: `between-cells` at every cell contact, \
+`between-columns` along a row only (holder wall), `between-rows` between nested staggered rows only \
+(spacer wall; set it to 0 and re-plan for a pack without interlayer spacers). All lengths are millimetres; X runs along the deck (tail → nose), Y across, Z up \
 with the origin at the enclosure centre.";
 
 #[derive(Clone)]

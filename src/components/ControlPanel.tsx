@@ -16,7 +16,7 @@ import type {
   PlannerConfig,
   ServiceReservation,
 } from "../bindings";
-import { usePlannerStore } from "../store/planner-store";
+import { spacersEnabled, usePlannerStore } from "../store/planner-store";
 import { NumberField } from "./NumberField";
 
 const ORIENTATIONS: Array<{ value: PackRequest["orientation"]; label: string }> = [
@@ -39,6 +39,8 @@ export function ControlPanel({ config }: { config: PlannerConfig }) {
   const holderOptions = usePlannerStore((state) => state.holderOptions);
   const holderCsg = usePlannerStore((state) => state.holderCsg);
   const setHolderOptions = usePlannerStore((state) => state.setHolderOptions);
+  const setSpacers = usePlannerStore((state) => state.setSpacers);
+  const spacers = spacersEnabled(config.pack.toleranceStack);
   const setHolderCsg = usePlannerStore((state) => state.setHolderCsg);
   const enclosureAssets = useEnclosureAssets();
   const enclosure = config.enclosure;
@@ -435,11 +437,11 @@ export function ControlPanel({ config }: { config: PlannerConfig }) {
           />
         </div>
         <div className="check-row">
-          <label>
+          <label title="Слой «Стенка спейсера» в стеке допусков: без него верхний ряд ложится в ложбины нижнего, и раскладка пересчитывается">
             <input
               type="checkbox"
-              checked={holderOptions.spacers}
-              onChange={(event) => setHolderOptions({ spacers: event.currentTarget.checked })}
+              checked={spacers}
+              onChange={(event) => setSpacers(event.currentTarget.checked)}
             />
             Спейсеры между слоями
           </label>

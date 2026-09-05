@@ -5,11 +5,20 @@ use deckpack_core::placement::PlacementSuggestion;
 use deckpack_core::{
     CellSpec, ComponentPlacement, ComponentSpec, EnclosureSpec, EnumerationRequest,
     EnumerationResponse, HeightMapAsset, HolderOptions, HolderPieceSummary, PackPlan,
-    ToleranceLayer, WorkspaceEvaluation, assets, geometry, holder, library, packing, placement,
+    PlannerConfig, ToleranceLayer, WorkspaceEvaluation, assets, geometry, holder, library, packing,
+    placement,
 };
 use deckpack_mesh::{CsgOptions, assembled_positions, build_holder, layout_stl};
 use serde::{Deserialize, Serialize};
 use specta::Type;
+
+/// What a new project starts from; the single source of the default
+/// tolerance stack and service reservations.
+#[tauri::command]
+#[specta::specta]
+pub fn default_config() -> PlannerConfig {
+    deckpack_core::project::default_config()
+}
 
 #[tauri::command]
 #[specta::specta]
