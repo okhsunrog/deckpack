@@ -3,12 +3,42 @@
 
 mod common;
 
+use std::path::Path;
+
 use common::{assert_close, fixtures};
 use deckpack_core::geometry::available_depth_for_box;
 use deckpack_core::holder::{compute_holder_pieces, generate_holder};
 use deckpack_core::packing::enumerate_pack_plans;
 use deckpack_core::*;
 use sha2::{Digest, Sha256};
+
+/// `UPDATE_FIXTURES=1 cargo test -p deckpack-core --test holder_fixtures`
+/// rewrites the recorded outputs from the current generator. Do this only
+/// for a deliberate behaviour change and say so in the commit.
+fn maybe_update(
+    name: &str,
+    fixture: &serde_json::Value,
+    pieces: &HolderPieces,
+    build: &deckpack_core::holder::HolderBuild,
+) -> bool {
+    if std::env::var_os("UPDATE_FIXTURES").is_none() {
+        return false;
+    }
+    let mut updated = fixture.clone();
+    updated["pieces"] = serde_json::to_value(pieces).unwrap();
+    updated["build"]["pieces"] = serde_json::to_value(&build.pieces).unwrap();
+    updated["build"]["stlByteLength"] = serde_json::json!(build.stl.len());
+    let digest: String = Sha256::digest(&build.stl)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    updated["build"]["stlSha256"] = serde_json::json!(digest);
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join(format!("../../fixtures/domain/holder/{name}.json"));
+    std::fs::write(&path, serde_json::to_string(&updated).unwrap()).unwrap();
+    eprintln!("updated {}", path.display());
+    true
+}
 
 #[test]
 fn holder_pieces_and_stl_match_typescript() {
@@ -22,13 +52,16 @@ fn holder_pieces_and_stl_match_typescript() {
         let options: HolderOptions = serde_json::from_value(fixture["options"].clone()).unwrap();
 
         let pieces = compute_holder_pieces(&plan, &cell, &stack, &enclosure, &options).unwrap();
+        let build = generate_holder(&plan, &cell, &stack, &enclosure, &options).unwrap();
+        if maybe_update(&name, &fixture, &pieces, &build) {
+            continue;
+        }
         assert_close(
             &fixture["pieces"],
             &serde_json::to_value(&pieces).unwrap(),
             &format!("{name}.pieces"),
         );
 
-        let build = generate_holder(&plan, &cell, &stack, &enclosure, &options).unwrap();
         assert_close(
             &fixture["build"]["pieces"],
             &serde_json::to_value(&build.pieces).unwrap(),

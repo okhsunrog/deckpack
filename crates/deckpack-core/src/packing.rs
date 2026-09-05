@@ -48,6 +48,8 @@ struct CompiledTolerances {
     between_layers: f64,
     between_groups: f64,
     outer_wrap: f64,
+    /// Lift of the whole pack above the enclosure floor (holder base).
+    floor: f64,
 }
 
 pub fn sum_tolerance(stack: &[ToleranceLayer], application: ToleranceApplication) -> f64 {
@@ -65,6 +67,7 @@ fn compile_tolerances(stack: &[ToleranceLayer]) -> CompiledTolerances {
         between_layers: sum_tolerance(stack, ToleranceApplication::BetweenLayers),
         between_groups: sum_tolerance(stack, ToleranceApplication::BetweenGroups),
         outer_wrap: sum_tolerance(stack, ToleranceApplication::AllFaces),
+        floor: sum_tolerance(stack, ToleranceApplication::Floor),
     }
 }
 
@@ -337,6 +340,8 @@ struct ProfilePlacementRequest<'a> {
     orientation: Axis,
     cylinder_radius_mm: f64,
     cylinder_half_length_mm: f64,
+    /// Holder base under the cells.
+    floor_mm: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -393,7 +398,7 @@ impl Draper<'_> {
         heightmap::min_cylinder_center_z(
             self.request.enclosure,
             &self.cylinder(cell[0] + x + shift_mm, cell[1] + self.y_offset),
-        )
+        ) + self.request.floor_mm
     }
 
     /// Drape (or rigidly settle) the lattice at one x offset.
@@ -1180,7 +1185,8 @@ fn run_task(context: &Context<'_>, task: Task) -> (Vec<PackPlan>, u32) {
             ANCHORS
                 .iter()
                 .map(|&anchor| {
-                    let offset = anchor_offset(&local_bounds, container, anchor);
+                    let mut offset = anchor_offset(&local_bounds, container, anchor);
+                    offset[2] += tolerance.floor;
                     ProfilePlacement {
                         anchor,
                         x_offset: offset[0],
@@ -1207,6 +1213,7 @@ fn run_task(context: &Context<'_>, task: Task) -> (Vec<PackPlan>, u32) {
                     .max(template.reservation_size[2] + tolerance.between_groups)
                     + 0.6,
                 rigid: mode == PackingMode::Brick,
+                floor_mm: tolerance.floor,
             });
             explored += scanned;
             placements

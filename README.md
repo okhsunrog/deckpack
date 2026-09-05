@@ -37,13 +37,16 @@ deckpack plan                                    # default project: 12S3P EVE 50
 deckpack plan --box 800x210x60 -p 4 --mode brick --limit 10
 deckpack plan --project my-project.json --json   # project JSON exported by the app
 deckpack evaluate --project my-project.json --plan 1
-deckpack holder --project my-project.json --plan 1 --style edge -o holder.stl
+deckpack holder --project my-project.json --plan 1 --style edge -o holder.stl --pieces-dir holder/ --bed 220x220
+deckpack cells --plan 1 -o cells.stl             # the cells as cylinders, for CAD
 deckpack enclosure import case.stl -o case.json --display case-app.stl
 deckpack plan --enclosure-file case.json
 deckpack library cells
 ```
 
 `--plan` accepts a 1-based rank or a plan id; `--json` prints the same structures the desktop app exchanges with its core.
+
+`holder` writes all pieces laid out in one STL and, with `--pieces-dir`, one STL per piece for the slicer; `--bed WxD` reports whether each piece fits the print bed straight or rotated 45° and how many strips share a plate. Cusps between bores are flattened to `minWallMm` (0.8 mm by default) so the slicer does not drop them, and the cradle base under the cells is the «Дно холдера» tolerance layer: leave it at 0 for packs without a printed holder, raise it to 0.4–1.2 mm (as far as the lid allows) when the comb must stay in one piece.
 
 ### MCP server
 

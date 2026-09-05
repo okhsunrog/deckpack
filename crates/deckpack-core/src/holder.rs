@@ -47,12 +47,14 @@ fn group_by(values: &[f64], epsilon: f64) -> Vec<f64> {
     centers
 }
 
-/// Slab between `slab_bottom` and `slab_top` with circular bites for the
-/// discs above (from the top) and below (from the bottom).
+/// Slab between `slab_bottom(t)` and `slab_top(t)` with circular bites for the
+/// discs above (from the top) and below (from the bottom). The slab bounds
+/// vary along the profile so a comb follows cells that settled at different
+/// heights instead of rising to the tallest one.
 #[allow(clippy::too_many_arguments)]
 fn wave_profile(
-    slab_bottom: f64,
-    slab_top: f64,
+    slab_bottom: impl Fn(f64) -> f64,
+    slab_top: impl Fn(f64) -> f64,
     bottom_discs: &[Disc],
     top_discs: &[Disc],
     bore: f64,
@@ -67,14 +69,14 @@ fn wave_profile(
     };
     let mut x = t_min;
     while x <= t_max + 1e-9 {
-        let mut hi = slab_top;
+        let mut hi = slab_top(x);
         for disc in top_discs {
             let dt = x - disc.center;
             if dt.abs() < bore {
                 hi = hi.min(disc.z - (bore * bore - dt * dt).sqrt());
             }
         }
-        let mut lo = slab_bottom;
+        let mut lo = slab_bottom(x);
         for disc in bottom_discs {
             let dt = x - disc.center;
             if dt.abs() < bore {
@@ -89,14 +91,102 @@ fn wave_profile(
     profile
 }
 
-/// Drop degenerate zero-thickness columns at both ends of a profile.
-fn trim_empty_ends(profile: Profile) -> Profile {
+/// Flatten the knife edges where two bores meet: lower every local maximum
+/// of `top` (and raise every local minimum of `bottom`) until the fin is at
+/// least `min_wall` wide, so the slicer prints the cusp instead of dropping it.
+fn cap_cusps(profile: &mut Profile, min_wall: f64) {
+    if min_wall <= 0.0 || profile.t.len() < 3 {
+        return;
+    }
+    let step = profile.t[1] - profile.t[0];
+    let n = profile.t.len();
+    let eps = 1e-9;
+    // Run of columns around `i` whose value passes `keep`; a run of k columns
+    // spans k·step of material.
+    let run = |values: &[f64], i: usize, keep: &dyn Fn(f64) -> bool| -> (usize, usize) {
+        let (mut l, mut r) = (i, i);
+        while l > 0 && keep(values[l - 1]) {
+            l -= 1;
+        }
+        while r + 1 < n && keep(values[r + 1]) {
+            r += 1;
+        }
+        (l, r)
+    };
+    let mut top_caps: Vec<(usize, usize, f64)> = Vec::new();
+    for i in 1..n - 1 {
+        let (top, bottom) = (&profile.top, &profile.bottom);
+        if !(top[i] >= top[i - 1] && top[i] >= top[i + 1] && top[i] > bottom[i]) {
+            continue;
+        }
+        let mut y = top[i];
+        loop {
+            let (l, r) = run(top, i, &|v| v >= y - eps);
+            // A run reaching the profile ends is an end fin, not a cusp.
+            if l == 0 || r == n - 1 || y <= bottom[i] {
+                break;
+            }
+            if (r - l + 1) as f64 * step >= min_wall {
+                top_caps.push((l, r, y));
+                break;
+            }
+            y -= 0.05;
+        }
+    }
+    for (l, r, y) in top_caps {
+        // Never thin the wall under the cusp below the minimum either.
+        let floor = profile.bottom[l..=r]
+            .iter()
+            .copied()
+            .fold(f64::NEG_INFINITY, f64::max)
+            + min_wall;
+        let y = y.max(floor);
+        for j in l..=r {
+            profile.top[j] = profile.top[j].min(y).max(profile.bottom[j]);
+        }
+    }
+    let mut bottom_caps: Vec<(usize, usize, f64)> = Vec::new();
+    for i in 1..n - 1 {
+        let (top, bottom) = (&profile.top, &profile.bottom);
+        if !(bottom[i] <= bottom[i - 1] && bottom[i] <= bottom[i + 1] && top[i] > bottom[i]) {
+            continue;
+        }
+        let mut y = bottom[i];
+        loop {
+            let (l, r) = run(bottom, i, &|v| v <= y + eps);
+            if l == 0 || r == n - 1 || y >= top[i] {
+                break;
+            }
+            if (r - l + 1) as f64 * step >= min_wall {
+                bottom_caps.push((l, r, y));
+                break;
+            }
+            y += 0.05;
+        }
+    }
+    for (l, r, y) in bottom_caps {
+        let ceiling = profile.top[l..=r]
+            .iter()
+            .copied()
+            .fold(f64::INFINITY, f64::min)
+            - min_wall;
+        let y = y.min(ceiling);
+        for j in l..=r {
+            profile.bottom[j] = profile.bottom[j].max(y).min(profile.top[j]);
+        }
+    }
+}
+
+/// Drop columns thinner than `min_wall` (at least degenerate ones) at both
+/// ends of a profile.
+fn trim_empty_ends(profile: Profile, min_wall: f64) -> Profile {
+    let threshold = min_wall.max(0.05);
     let mut first = 0;
     let mut last = profile.t.len() - 1;
-    while first < last && profile.top[first] - profile.bottom[first] < 0.05 {
+    while first < last && profile.top[first] - profile.bottom[first] < threshold {
         first += 1;
     }
-    while last > first && profile.top[last] - profile.bottom[last] < 0.05 {
+    while last > first && profile.top[last] - profile.bottom[last] < threshold {
         last -= 1;
     }
     Profile {
@@ -104,6 +194,15 @@ fn trim_empty_ends(profile: Profile) -> Profile {
         top: profile.top[first..=last].to_vec(),
         bottom: profile.bottom[first..=last].to_vec(),
     }
+}
+
+/// Height of the disc nearest to `t` (the local slab bound for a comb).
+fn nearest_z(discs: &[Disc], t: f64) -> f64 {
+    discs
+        .iter()
+        .min_by(|a, b| (a.center - t).abs().total_cmp(&(b.center - t).abs()))
+        .map(|disc| disc.z)
+        .unwrap_or(0.0)
 }
 
 fn max_of(values: impl Iterator<Item = f64>) -> f64 {
@@ -194,9 +293,10 @@ pub fn compute_holder_pieces(
             // the strip, so the piece sits flush on ramps and clears the seam
             // ridge while filling any gap down to the deep floor.
             let bottom_layer = &layers[0];
+            let floor_z = -enclosure_height / 2.0;
             let mut cradle = wave_profile(
-                -enclosure_height / 2.0,
-                max_of(bottom_layer.iter().map(|d| d.z)),
+                |_| floor_z,
+                |t| nearest_z(bottom_layer, t),
                 &[],
                 bottom_layer,
                 bore,
@@ -233,7 +333,8 @@ pub fn compute_holder_pieces(
                     cradle.top[i] = cradle.top[i].min(cradle.bottom[i] + 2.5);
                 }
             }
-            let cradle = trim_empty_ends(cradle);
+            cap_cusps(&mut cradle, options.min_wall_mm);
+            let cradle = trim_empty_ends(cradle, options.min_wall_mm);
             pieces.push(ProfilePiece {
                 label: format!("cradle-row{}{suffix}", row_index + 1),
                 t: cradle.t,
@@ -248,8 +349,8 @@ pub fn compute_holder_pieces(
                 let lower = &layers[index];
                 let upper = &layers[index + 1];
                 let mut spacer = wave_profile(
-                    min_of(lower.iter().map(|d| d.z)),
-                    max_of(upper.iter().map(|d| d.z)),
+                    |t| nearest_z(lower, t),
+                    |t| nearest_z(upper, t),
                     lower,
                     upper,
                     bore,
@@ -277,7 +378,8 @@ pub fn compute_holder_pieces(
                         spacer.bottom[i] = spacer.bottom[i].max(spacer.top[i] - web_mm);
                     }
                 }
-                let spacer = trim_empty_ends(spacer);
+                cap_cusps(&mut spacer, options.min_wall_mm);
+                let spacer = trim_empty_ends(spacer, options.min_wall_mm);
                 pieces.push(ProfilePiece {
                     label: format!(
                         "spacer-row{}{suffix}-L{}{}",
@@ -356,6 +458,9 @@ pub fn emit_piece_triangles(
 
 pub struct HolderBuild {
     pub pieces: Vec<HolderPieceSummary>,
+    /// Thinnest wall over all pieces; below `HolderOptions::min_wall_mm` the
+    /// cradle base under the cells will not print and the comb falls apart.
+    pub thinnest_wall_mm: f64,
     /// Binary STL: 80-byte header, triangle count, 50 bytes per triangle.
     pub stl: Vec<u8>,
 }
@@ -427,8 +532,13 @@ pub fn build_stl(pieces: &[ProfilePiece], options: &HolderOptions) -> HolderBuil
         }
         stl.extend_from_slice(&[0u8; 2]);
     }
+    let thinnest_wall_mm = summaries
+        .iter()
+        .map(|p| p.min_wall_mm)
+        .fold(f64::INFINITY, f64::min);
     HolderBuild {
         pieces: summaries,
+        thinnest_wall_mm,
         stl,
     }
 }
@@ -454,6 +564,44 @@ mod tests {
             group_by(&[10.0, 0.0, 10.3, 20.0, 0.2], 0.5),
             vec![0.0, 10.0, 20.0]
         );
+    }
+
+    #[test]
+    fn cusps_are_flattened_to_the_minimum_wall() {
+        // Two touching bores of radius 10 leave a zero-width cusp at t = 10.
+        let discs = [
+            Disc {
+                center: 0.0,
+                z: 10.0,
+            },
+            Disc {
+                center: 20.0,
+                z: 10.0,
+            },
+        ];
+        let mut profile = wave_profile(|_| 0.0, |_| 10.0, &[], &discs, 10.0, -12.0, 32.0, 0.25);
+        let cusp = profile
+            .t
+            .iter()
+            .position(|t| (t - 10.0).abs() < 1e-9)
+            .unwrap();
+        assert!(profile.top[cusp] > 9.99);
+        cap_cusps(&mut profile, 0.8);
+        // The fin between the bores is 0.8 mm wide where each arc is 0.4 mm
+        // from the tangent point: 10 - sqrt(100 - 9.6²) = 7.2 mm. The grid
+        // rounds the cut down by at most one column.
+        assert!(
+            profile.top[cusp] <= 7.2 + 0.05 && profile.top[cusp] >= 7.2 - 0.45,
+            "{}",
+            profile.top[cusp]
+        );
+        // The bores themselves are untouched away from the cusp.
+        let mid = profile
+            .t
+            .iter()
+            .position(|t| (t - 0.0).abs() < 1e-9)
+            .unwrap();
+        assert!((profile.top[mid] - 0.0).abs() < 1e-9);
     }
 
     #[test]

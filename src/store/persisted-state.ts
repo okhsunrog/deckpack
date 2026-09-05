@@ -32,6 +32,7 @@ const toleranceLayerSchema = z.object({
     "between-layers",
     "between-groups",
     "all-faces",
+    "floor",
   ]),
   thicknessMm: z.number().nonnegative(),
 });
@@ -107,6 +108,16 @@ export function sanitizePersistedConfig(value: unknown): PlannerConfig | undefin
       kind: "holder",
       scope: "series-group",
       application: "between-layers",
+      thicknessMm: 0,
+    });
+  }
+  if (!config.pack.toleranceStack.some((layer) => layer.application === "floor")) {
+    config.pack.toleranceStack.push({
+      id: "holder-floor",
+      label: "Дно холдера",
+      kind: "holder",
+      scope: "pack-block",
+      application: "floor",
       thicknessMm: 0,
     });
   }

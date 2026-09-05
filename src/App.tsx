@@ -35,10 +35,11 @@ async function exportHolder(plan: PackPlan, cell: CellSpec) {
     );
     if (result.status === "error") throw new Error(result.error);
     const thinnest = Math.min(...result.data.pieces.map((piece) => piece.minWallMm));
-    if (thinnest < 0.4) {
+    if (thinnest < 0.8) {
       window.alert(
-        `Внимание: минимальная стенка холдера ${thinnest.toFixed(2)} мм. ` +
-          "Увеличьте слой «Стенка холдера» (staggered) или Group separator (brick).",
+        `Внимание: минимальная стенка холдера ${thinnest.toFixed(2)} мм, принтер её не напечатает. ` +
+          "Дно под банками задаёт слой «Дно холдера»: поставьте его не меньше 0.8 мм, если пак ещё влезает по высоте, " +
+          "иначе кредл распадётся на отдельные гребёнки. Стенки между банками задают «Стенка холдера» и Group separator.",
       );
     }
   } catch (error) {

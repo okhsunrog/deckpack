@@ -199,6 +199,11 @@ export type HolderOptions = {
 	style: HolderStyle,
 	/**  Band width along the cell axis for the "edge" style. */
 	edgeStripWidthMm: number,
+	/**
+	 *  Thinnest wall the printer can make: cusps between bores are flattened
+	 *  and end slivers trimmed to this width. 0 disables (legacy profiles).
+	 */
+	minWallMm?: number,
 };
 
 export type HolderPieceSummary = {
@@ -361,7 +366,9 @@ export type SourceMetadata = {
 	dimensionBasis: string,
 };
 
-export type ToleranceApplication = "radial" | "axial-ends" | "between-cells" | "between-layers" | "between-groups" | "all-faces";
+export type ToleranceApplication = "radial" | "axial-ends" | "between-cells" | "between-layers" | "between-groups" | "all-faces" | 
+/**  Material under the whole pack, e.g. the base of a printed holder. */
+"floor";
 
 export type ToleranceKind = "nickel" | "fishpaper" | "compound" | "holder" | "outer-wrap";
 

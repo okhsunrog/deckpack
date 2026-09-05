@@ -11,10 +11,11 @@ use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use deckpack_core::geometry::{box_size, evaluate_workspace};
 use deckpack_core::holder::generate_holder;
+use deckpack_core::holder::{build_stl, compute_holder_pieces};
 use deckpack_core::packing::enumerate_pack_plans;
 use deckpack_core::project::{ProjectFile, box_enclosure, default_config, mesh_enclosure};
 use deckpack_core::*;
-use deckpack_mesh::{DepthMapOptions, ImportOptions, import_enclosure_stl};
+use deckpack_mesh::{DepthMapOptions, ImportOptions, cells_stl, import_enclosure_stl};
 
 #[derive(Parser)]
 #[command(
@@ -35,6 +36,8 @@ enum Command {
     Evaluate(EvaluateArgs),
     /// Generate the printable cell holder (binary STL) for a layout.
     Holder(HolderArgs),
+    /// Export the cells of a layout as cylinders (binary STL, app coordinates).
+    Cells(CellsArgs),
     /// Enclosure assets: import an STL, inspect a height map.
     #[command(subcommand)]
     Enclosure(EnclosureCommand),
@@ -142,6 +145,27 @@ struct HolderArgs {
     /// Cell length left free at each end for nickel, millimetres.
     #[arg(long)]
     terminal_margin: Option<f64>,
+    /// Also write every piece as its own STL into this directory.
+    #[arg(long, value_name = "DIR")]
+    pieces_dir: Option<PathBuf>,
+    /// Print bed as WxD in millimetres (e.g. 220x220): report whether pieces fit straight or diagonally.
+    #[arg(long, value_name = "WxD")]
+    bed: Option<String>,
+}
+
+#[derive(Args)]
+struct CellsArgs {
+    #[command(flatten)]
+    config: ConfigArgs,
+    /// Layout to export: rank (1-based) or plan id.
+    #[arg(long, default_value = "1")]
+    plan: String,
+    /// Output STL path.
+    #[arg(short, long, value_name = "FILE")]
+    output: PathBuf,
+    /// Facets around each cell.
+    #[arg(long, default_value_t = 64)]
+    segments: usize,
 }
 
 #[derive(Subcommand)]
@@ -195,6 +219,7 @@ fn main() -> Result<()> {
         Command::Plan(args) => plan(args),
         Command::Evaluate(args) => evaluate(args),
         Command::Holder(args) => holder(args),
+        Command::Cells(args) => cells(args),
         Command::Enclosure(command) => enclosure(command),
         Command::Library(command) => library(command),
     }
@@ -506,14 +531,37 @@ fn holder(args: HolderArgs) -> Result<()> {
             piece.min_wall_mm
         );
     }
-    let thinnest = build
-        .pieces
-        .iter()
-        .map(|p| p.min_wall_mm)
-        .fold(f64::INFINITY, f64::min);
-    if thinnest < 0.4 {
+    if let Some(dir) = &args.pieces_dir {
+        fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
+        let layout = compute_holder_pieces(
+            plan,
+            cell,
+            &config.pack.tolerance_stack,
+            &config.enclosure,
+            &options,
+        )?;
+        for piece in &layout.pieces {
+            let single = build_stl(std::slice::from_ref(piece), &options);
+            let path = dir.join(format!("{}.stl", piece.label));
+            fs::write(&path, &single.stl)
+                .with_context(|| format!("cannot write {}", path.display()))?;
+        }
+        println!(
+            "{} pieces written to {}",
+            layout.pieces.len(),
+            dir.display()
+        );
+    }
+    if let Some(bed) = &args.bed {
+        report_bed_fit(bed, &build.pieces)?;
+    }
+    if build.thinnest_wall_mm < options.min_wall_mm.max(0.4) {
         eprintln!(
-            "warning: thinnest wall is {thinnest:.2} mm; raise the holder-wall or group-separator layer"
+            "warning: thinnest wall is {:.2} mm. The cradle base under the cells is the «Дно холдера» \
+             tolerance layer; raise it to at least {:.1} mm (if the pack still fits the lid) or the comb \
+             prints as separate cusps.",
+            build.thinnest_wall_mm,
+            options.min_wall_mm.max(0.8)
         );
     }
     Ok(())
@@ -623,6 +671,65 @@ fn library(command: LibraryCommand) -> Result<()> {
                 );
             }
         }
+    }
+    Ok(())
+}
+
+fn cells(args: CellsArgs) -> Result<()> {
+    let config = build_config(&args.config)?;
+    let response = enumerate(&config)?;
+    let plan = select_plan(&response.plans, &args.plan)?;
+    let cell = library::cell(&config.pack.cell_id);
+    let stl = cells_stl(plan, cell, args.segments);
+    fs::write(&args.output, &stl)
+        .with_context(|| format!("cannot write {}", args.output.display()))?;
+    println!(
+        "{} · {} cells of {} as {}-facet cylinders · {} bytes",
+        args.output.display(),
+        plan.cells.len(),
+        cell.model,
+        args.segments,
+        stl.len()
+    );
+    Ok(())
+}
+
+/// Can each piece be printed on a `WxD` bed, straight or rotated 45°, and how
+/// many strips share one plate diagonally?
+fn report_bed_fit(bed: &str, pieces: &[HolderPieceSummary]) -> Result<()> {
+    let dims: Vec<f64> = bed
+        .split(['x', 'X', '×'])
+        .map(|part| part.trim().parse::<f64>())
+        .collect::<Result<_, _>>()
+        .with_context(|| format!("--bed expects WxD in millimetres, got `{bed}`"))?;
+    let [width, depth] = dims[..] else {
+        bail!("--bed expects exactly two dimensions")
+    };
+    let side = width.min(depth);
+    let gap = 3.0;
+    println!("bed {width:.0}×{depth:.0} mm:");
+    for piece in pieces {
+        let (l, w, h) = (piece.size_mm[0], piece.size_mm[1], piece.size_mm[2]);
+        let straight = (l <= width && w <= depth) || (l <= depth && w <= width);
+        let diagonal = (l + w) / 2f64.sqrt() <= side;
+        // Parallel diagonal strips at pitch w + gap: the outermost strip still
+        // needs l + w + (n - 1)(w + gap) <= side·√2.
+        let per_plate = if diagonal {
+            (((side * 2f64.sqrt() - l - w) / (w + gap)).floor() as usize + 1).max(1)
+        } else {
+            0
+        };
+        let verdict = if straight {
+            "fits straight".to_owned()
+        } else if diagonal {
+            format!("fits at 45° only, up to {per_plate} per plate")
+        } else {
+            "does not fit".to_owned()
+        };
+        println!(
+            "  {:<24} {:.0}×{:.0}×{:.0} mm  {}",
+            piece.label, l, w, h, verdict
+        );
     }
     Ok(())
 }

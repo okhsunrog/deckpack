@@ -48,7 +48,12 @@ fn holder_fixtures_round_trip() {
             &format!("{name}.toleranceStack"),
         );
         round_trip::<EnclosureSpec>(&fixture["enclosure"], &format!("{name}.enclosure"));
-        round_trip::<HolderOptions>(&fixture["options"], &format!("{name}.options"));
+        // `minWallMm` was added after the fixtures were recorded; the recorded
+        // options must still parse and serialise back to the same values.
+        let options: HolderOptions = serde_json::from_value(fixture["options"].clone()).unwrap();
+        let mut back = serde_json::to_value(options).unwrap();
+        back.as_object_mut().unwrap().remove("minWallMm");
+        assert_close(&fixture["options"], &back, &format!("{name}.options"));
         round_trip::<HolderPieces>(&fixture["pieces"], &format!("{name}.pieces"));
         round_trip::<Vec<HolderPieceSummary>>(
             &fixture["build"]["pieces"],

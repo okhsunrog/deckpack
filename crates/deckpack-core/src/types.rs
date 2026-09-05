@@ -181,6 +181,8 @@ pub enum ToleranceApplication {
     BetweenLayers,
     BetweenGroups,
     AllFaces,
+    /// Material under the whole pack, e.g. the base of a printed holder.
+    Floor,
 }
 
 #[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
@@ -509,6 +511,10 @@ pub struct HolderOptions {
     pub style: HolderStyle,
     /// Band width along the cell axis for the "edge" style.
     pub edge_strip_width_mm: f64,
+    /// Thinnest wall the printer can make: cusps between bores are flattened
+    /// and end slivers trimmed to this width. 0 disables (legacy profiles).
+    #[serde(default)]
+    pub min_wall_mm: f64,
 }
 
 impl Default for HolderOptions {
@@ -520,6 +526,7 @@ impl Default for HolderOptions {
             sample_step_mm: 0.25,
             style: HolderStyle::Full,
             edge_strip_width_mm: 12.0,
+            min_wall_mm: 0.8,
         }
     }
 }

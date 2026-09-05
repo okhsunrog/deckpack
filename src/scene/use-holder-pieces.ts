@@ -17,6 +17,7 @@ export const DEFAULT_HOLDER_OPTIONS: HolderOptions = {
   sampleStepMm: 0.25,
   style: "full",
   edgeStripWidthMm: 12,
+  minWallMm: 0.8,
 };
 
 /**

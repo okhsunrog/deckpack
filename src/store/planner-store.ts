@@ -72,6 +72,14 @@ export const defaultConfig: PlannerConfig = {
         thicknessMm: 0,
       },
       {
+        id: "holder-floor",
+        label: "Дно холдера",
+        kind: "holder",
+        scope: "pack-block",
+        application: "floor",
+        thicknessMm: 0,
+      },
+      {
         id: "group-separator",
         label: "Group separator",
         kind: "fishpaper",
