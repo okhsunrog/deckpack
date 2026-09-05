@@ -15,7 +15,10 @@ use deckpack_core::holder::{build_stl, compute_holder_pieces};
 use deckpack_core::packing::enumerate_pack_plans;
 use deckpack_core::project::{ProjectFile, box_enclosure, default_config, mesh_enclosure};
 use deckpack_core::*;
-use deckpack_mesh::{DepthMapOptions, ImportOptions, cells_stl, import_enclosure_stl};
+use deckpack_mesh::{
+    CsgOptions, DepthMapOptions, ImportOptions, RailSpan, build_piece, cells_stl,
+    import_enclosure_stl,
+};
 
 #[derive(Parser)]
 #[command(
@@ -151,6 +154,18 @@ struct HolderArgs {
     /// Print bed as WxD in millimetres (e.g. 220x220): report whether pieces fit straight or diagonally.
     #[arg(long, value_name = "WxD")]
     bed: Option<String>,
+    /// Also generate a cap over the top layer.
+    #[arg(long)]
+    cap: bool,
+    /// Build the per-piece STLs with CSG: end rails and screw holes (needs --pieces-dir).
+    #[arg(long, requires = "pieces_dir")]
+    csg: bool,
+    /// Rail width at each end for --csg, millimetres (0 = no rails).
+    #[arg(long, default_value_t = 8.0)]
+    rail_width: f64,
+    /// Screw hole diameter through the rails for --csg, millimetres (0 = none).
+    #[arg(long, default_value_t = 3.2)]
+    screw: f64,
 }
 
 #[derive(Args)]
@@ -505,6 +520,7 @@ fn holder(args: HolderArgs) -> Result<()> {
     if let Some(margin) = args.terminal_margin {
         options.terminal_margin_mm = margin;
     }
+    options.cap = args.cap;
     let build = generate_holder(
         plan,
         cell,
@@ -531,6 +547,7 @@ fn holder(args: HolderArgs) -> Result<()> {
             piece.min_wall_mm
         );
     }
+    let mut csg_sizes: Option<Vec<(String, [f64; 3])>> = None;
     if let Some(dir) = &args.pieces_dir {
         fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
         let layout = compute_holder_pieces(
@@ -540,20 +557,64 @@ fn holder(args: HolderArgs) -> Result<()> {
             &config.enclosure,
             &options,
         )?;
-        for piece in &layout.pieces {
-            let single = build_stl(std::slice::from_ref(piece), &options);
-            let path = dir.join(format!("{}.stl", piece.label));
-            fs::write(&path, &single.stl)
-                .with_context(|| format!("cannot write {}", path.display()))?;
+        if args.csg {
+            let csg = CsgOptions {
+                rail_width_mm: args.rail_width,
+                screw_diameter_mm: args.screw,
+                ..CsgOptions::default()
+            };
+            let started = std::time::Instant::now();
+            let span = RailSpan::of(&layout.pieces);
+            let mut sizes = Vec::new();
+            for piece in &layout.pieces {
+                let built = build_piece(piece, &csg, span)?;
+                sizes.push((built.report.label.clone(), built.report.size_mm));
+                let path = dir.join(format!("{}.stl", piece.label));
+                fs::write(&path, &built.stl)
+                    .with_context(|| format!("cannot write {}", path.display()))?;
+                let r = &built.report;
+                println!(
+                    "  csg {:<22} {:>6} tris  {:.1}×{:.1}×{:.1} mm  {:.1} cm³  holes {}",
+                    r.label,
+                    r.triangles,
+                    r.size_mm[0],
+                    r.size_mm[1],
+                    r.size_mm[2],
+                    r.volume_mm3 / 1000.0,
+                    r.genus
+                );
+            }
+            csg_sizes = Some(sizes);
+            println!(
+                "{} CSG pieces written to {} in {:.0} ms",
+                layout.pieces.len(),
+                dir.display(),
+                started.elapsed().as_secs_f64() * 1000.0
+            );
+        } else {
+            for piece in &layout.pieces {
+                let single = build_stl(std::slice::from_ref(piece), &options);
+                let path = dir.join(format!("{}.stl", piece.label));
+                fs::write(&path, &single.stl)
+                    .with_context(|| format!("cannot write {}", path.display()))?;
+            }
+            println!(
+                "{} pieces written to {}",
+                layout.pieces.len(),
+                dir.display()
+            );
         }
-        println!(
-            "{} pieces written to {}",
-            layout.pieces.len(),
-            dir.display()
-        );
     }
     if let Some(bed) = &args.bed {
-        report_bed_fit(bed, &build.pieces)?;
+        let sizes: Vec<(String, [f64; 3])> = match &csg_sizes {
+            Some(sizes) => sizes.clone(),
+            None => build
+                .pieces
+                .iter()
+                .map(|p| (p.label.clone(), p.size_mm))
+                .collect(),
+        };
+        report_bed_fit(bed, &sizes)?;
     }
     if build.thinnest_wall_mm < options.min_wall_mm.max(0.4) {
         eprintln!(
@@ -696,7 +757,7 @@ fn cells(args: CellsArgs) -> Result<()> {
 
 /// Can each piece be printed on a `WxD` bed, straight or rotated 45°, and how
 /// many strips share one plate diagonally?
-fn report_bed_fit(bed: &str, pieces: &[HolderPieceSummary]) -> Result<()> {
+fn report_bed_fit(bed: &str, pieces: &[(String, [f64; 3])]) -> Result<()> {
     let dims: Vec<f64> = bed
         .split(['x', 'X', '×'])
         .map(|part| part.trim().parse::<f64>())
@@ -708,8 +769,8 @@ fn report_bed_fit(bed: &str, pieces: &[HolderPieceSummary]) -> Result<()> {
     let side = width.min(depth);
     let gap = 3.0;
     println!("bed {width:.0}×{depth:.0} mm:");
-    for piece in pieces {
-        let (l, w, h) = (piece.size_mm[0], piece.size_mm[1], piece.size_mm[2]);
+    for (label, size) in pieces {
+        let (l, w, h) = (size[0], size[1], size[2]);
         let straight = (l <= width && w <= depth) || (l <= depth && w <= width);
         let diagonal = (l + w) / 2f64.sqrt() <= side;
         // Parallel diagonal strips at pitch w + gap: the outermost strip still
@@ -726,10 +787,7 @@ fn report_bed_fit(bed: &str, pieces: &[HolderPieceSummary]) -> Result<()> {
         } else {
             "does not fit".to_owned()
         };
-        println!(
-            "  {:<24} {:.0}×{:.0}×{:.0} mm  {}",
-            piece.label, l, w, h, verdict
-        );
+        println!("  {:<24} {:.0}×{:.0}×{:.0} mm  {}", label, l, w, h, verdict);
     }
     Ok(())
 }

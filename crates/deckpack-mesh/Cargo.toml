@@ -8,6 +8,7 @@ edition.workspace = true
 [dependencies]
 base64 = "0.23.1"
 deckpack-core = { version = "0.1.0", path = "../deckpack-core" }
+manifold-rust = "0.13.1"
 rayon = "1.12.0"
 thiserror = "2.0.20"
 

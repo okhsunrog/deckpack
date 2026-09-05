@@ -515,6 +515,10 @@ pub struct HolderOptions {
     /// and end slivers trimmed to this width. 0 disables (legacy profiles).
     #[serde(default)]
     pub min_wall_mm: f64,
+    /// Also emit a cap over the top layer (wave underneath, flat top), so a
+    /// cradle / spacer / cap sandwich can be screwed together through rails.
+    #[serde(default)]
+    pub cap: bool,
 }
 
 impl Default for HolderOptions {
@@ -527,6 +531,7 @@ impl Default for HolderOptions {
             style: HolderStyle::Full,
             edge_strip_width_mm: 12.0,
             min_wall_mm: 0.8,
+            cap: false,
         }
     }
 }

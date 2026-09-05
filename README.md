@@ -46,7 +46,7 @@ deckpack library cells
 
 `--plan` accepts a 1-based rank or a plan id; `--json` prints the same structures the desktop app exchanges with its core.
 
-`holder` writes all pieces laid out in one STL and, with `--pieces-dir`, one STL per piece for the slicer; `--bed WxD` reports whether each piece fits the print bed straight or rotated 45° and how many strips share a plate. Cusps between bores are flattened to `minWallMm` (0.8 mm by default) so the slicer does not drop them, and the cradle base under the cells is the «Дно холдера» tolerance layer: leave it at 0 for packs without a printed holder, raise it to 0.4–1.2 mm (as far as the lid allows) when the comb must stay in one piece.
+`holder` writes all pieces laid out in one STL and, with `--pieces-dir`, one STL per piece for the slicer; `--cap` adds a cap over the top layer, and `--csg` builds each piece with CSG (extruded profile plus 8 mm end rails with 3.2 mm screw holes running along the pack height, positioned identically on cradle, spacers and cap so one bolt clamps the sandwich); `--bed WxD` reports whether each piece fits the print bed straight or rotated 45° and how many strips share a plate. Cusps between bores are flattened to `minWallMm` (0.8 mm by default) so the slicer does not drop them, and the cradle base under the cells is the «Дно холдера» tolerance layer: leave it at 0 for packs without a printed holder, raise it to 0.4–1.2 mm (as far as the lid allows) when the comb must stay in one piece.
 
 ### MCP server
 
@@ -64,7 +64,7 @@ claude mcp add --scope user deckpack -- "$PWD/target/release/deckpack-mcp"
 All domain logic lives in a Cargo workspace; the React frontend renders and edits state only.
 
 - `crates/deckpack-core`: data model, geometry and height-map queries, pack enumeration (rayon-parallel), holder generation. Pure computation, no Tauri.
-- `crates/deckpack-mesh`: STL parsing and the STL → height-map sampler used to import enclosures at runtime. `import_enclosure` stores each import under `<app data>/enclosures/<id>.{json,stl}` and registers it with the core; the display mesh is served to the webview through the asset protocol.
+- `crates/deckpack-mesh`: STL parsing, the STL → height-map sampler used to import enclosures at runtime, cell/holder mesh export, and the CSG holder build on [`manifold-rust`](https://github.com/larsbrubaker/manifold-rust) (rails with screw holes, guaranteed-manifold output). `import_enclosure` stores each import under `<app data>/enclosures/<id>.{json,stl}` and registers it with the core; the display mesh is served to the webview through the asset protocol.
 - `src-tauri`: the desktop shell; its commands are thin wrappers over the core crate.
 - `crates/deckpack-cli`: the `deckpack` command-line tool (plan, evaluate, holder, enclosure import/info, library) over the same core.
 - `crates/deckpack-mcp`: `deckpack-mcp`, an MCP server over stdio that exposes the planner to AI agents.

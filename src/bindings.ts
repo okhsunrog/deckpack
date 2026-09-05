@@ -204,6 +204,11 @@ export type HolderOptions = {
 	 *  and end slivers trimmed to this width. 0 disables (legacy profiles).
 	 */
 	minWallMm?: number,
+	/**
+	 *  Also emit a cap over the top layer (wave underneath, flat top), so a
+	 *  cradle / spacer / cap sandwich can be screwed together through rails.
+	 */
+	cap?: boolean,
 };
 
 export type HolderPieceSummary = {

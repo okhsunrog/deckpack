@@ -18,6 +18,7 @@ export const DEFAULT_HOLDER_OPTIONS: HolderOptions = {
   style: "full",
   edgeStripWidthMm: 12,
   minWallMm: 0.8,
+  cap: false,
 };
 
 /**

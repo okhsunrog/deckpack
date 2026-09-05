@@ -394,6 +394,42 @@ pub fn compute_holder_pieces(
                     axial_center_mm: segment_center,
                 });
             }
+
+            // Cap over the top layer: wave underneath following the local
+            // cell heights, flat top, thin web where no cell is near.
+            if options.cap {
+                let top_layer = &layers[layers.len() - 1];
+                let web_mm = 2.5;
+                let cap_top = max_of(top_layer.iter().map(|d| d.z)) + bore + web_mm;
+                let mut cap = wave_profile(
+                    |t| nearest_z(top_layer, t),
+                    |_| cap_top,
+                    top_layer,
+                    &[],
+                    bore,
+                    t_min,
+                    t_max,
+                    options.sample_step_mm,
+                );
+                for i in 0..cap.t.len() {
+                    let near = top_layer
+                        .iter()
+                        .any(|disc| (cap.t[i] - disc.center).abs() < bore + 0.6);
+                    if !near {
+                        cap.bottom[i] = cap.bottom[i].max(cap.top[i] - web_mm);
+                    }
+                }
+                cap_cusps(&mut cap, options.min_wall_mm);
+                let cap = trim_empty_ends(cap, options.min_wall_mm);
+                pieces.push(ProfilePiece {
+                    label: format!("cap-row{}{suffix}", row_index + 1),
+                    t: cap.t,
+                    top: cap.top,
+                    bottom: cap.bottom,
+                    length_mm: segment_length,
+                    axial_center_mm: segment_center,
+                });
+            }
         }
     }
 
