@@ -9,10 +9,32 @@ export const commands = {
 	cellLibrary: () => __TAURI_INVOKE<CellSpec[]>("cell_library").then((v) => (v.map(i=>({...i,bareDiameterMm:i.bareDiameterMm==null?i.bareDiameterMm:i.bareDiameterMm,bareHeightMm:i.bareHeightMm==null?i.bareHeightMm:i.bareHeightMm})) as typeof v)),
 	componentLibrary: () => __TAURI_INVOKE<ComponentSpec[]>("component_library").then((v) => (v.map(i=>({...i,massG:i.massG==null?i.massG:i.massG,visual:i.visual==null?i.visual:i.visual})) as typeof v)),
 	enclosureAssets: () => __TAURI_INVOKE<HeightMapAsset[]>("enclosure_assets").then((v) => (v.map(i=>({...i,depthMap:({...i.depthMap,originMm:i.depthMap.originMm.map(i=>i)})})) as typeof v)),
+	/**
+	 *  Collision and free-volume check of the placed components against the pack
+	 *  and the enclosure. Runs on every drag frame, so it stays synchronous: the
+	 *  work is a few hundred microseconds.
+	 */
+	evaluateWorkspace: (enclosure: EnclosureSpec, plan: PackPlan, placements: ComponentPlacement[]) => typedError<WorkspaceEvaluation, string>(__TAURI_INVOKE("evaluate_workspace", { enclosure, plan: ({...plan,cellSizeMm:plan.cellSizeMm.map(i=>i),cells:plan.cells.map(i=>({...i,position:i.position.map(i=>i)})),groups:plan.groups.map(i=>({...i,center:i.center.map(i=>i)})),seriesPath:plan.seriesPath.map(i=>i.map(i=>i)),blocks:plan.blocks.map(i=>({...i,envelope:({...i.envelope,min:i.envelope.min.map(i=>i),max:i.envelope.max.map(i=>i)})})),serviceVolumes:plan.serviceVolumes.map(i=>({...i,box:({...i.box,min:i.box.min.map(i=>i),max:i.box.max.map(i=>i)})})),bounds:({...plan.bounds,min:plan.bounds.min.map(i=>i),max:plan.bounds.max.map(i=>i)}),metrics:({...plan.metrics,largestFreeBox:({...plan.metrics.largestFreeBox,box:({...plan.metrics.largestFreeBox.box,min:plan.metrics.largestFreeBox.box.min.map(i=>i),max:plan.metrics.largestFreeBox.box.max.map(i=>i)})})})}), placements: placements.map(i=>({...i,position:i.position.map(i=>i)})) })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,components:v.data.components.map(i=>({...i,box:({...i.box,min:i.box.min.map(i=>i),max:i.box.max.map(i=>i)})})),largestFreeBox:({...v.data.largestFreeBox,box:({...v.data.largestFreeBox.box,min:v.data.largestFreeBox.box.min.map(i=>i),max:v.data.largestFreeBox.box.max.map(i=>i)})})}) } : v) as typeof v)),
 };
 
 /* Types */
+export type Axis = "x" | "y" | "z";
+
+export type Box3D = {
+	min: [number, number, number],
+	max: [number, number, number],
+};
+
 export type CellFormFactor = "21700";
+
+export type CellPlacement = {
+	id: string,
+	groupId: string,
+	seriesIndex: number,
+	/**  Lattice layer the cell belongs to; independent of its settled height. */
+	layer: number,
+	position: [number, number, number],
+};
 
 export type CellSpec = {
 	id: string,
@@ -31,6 +53,28 @@ export type CellSpec = {
 };
 
 export type ComponentCategory = "esc" | "bms" | "antispark" | "custom";
+
+export type ComponentEvaluation = {
+	id: string,
+	box: Box3D,
+	collides: boolean,
+	outside: boolean,
+};
+
+export type ComponentPlacement = {
+	id: string,
+	componentId: string,
+	position: [number, number],
+	/**  Yaw around Z in degrees; any angle, not just quarter turns. */
+	rotationDeg: number,
+	/**
+	 *  Pitch around the component's width axis in degrees, applied before
+	 *  yaw. Positive tilts the +length end down, e.g. to lay a board along a
+	 *  ramp.
+	 */
+	tiltDeg: number,
+	dimensionsMm: Dimensions3D,
+};
 
 export type ComponentSpec = {
 	id: string,
@@ -68,6 +112,8 @@ export type Dimensions3D = {
 	height: number,
 };
 
+export type EnclosureSpec = { kind: "box"; dimensionsMm: Dimensions3D } | { kind: "mesh-heightmap"; assetId: string; dimensionsMm: Dimensions3D };
+
 /**  Sampled inner surface of an enclosure, generated from its STL. */
 export type HeightMapAsset = {
 	id: string,
@@ -81,7 +127,72 @@ export type HeightMapAsset = {
 
 export type HeightMapKind = "mesh-heightmap";
 
+export type LargestFreeBox = {
+	box: Box3D,
+	volumeMm3: number,
+};
+
+export type LayoutMetrics = {
+	score: number,
+	centerOfMassXmm: number,
+	centerOfMassPercent: number,
+	centerOffsetMm: number,
+	seriesChainLengthMm: number,
+	minClearanceMm: number,
+	layerCount: number,
+	reservationVolumeMm3: number,
+	utilizationPercent: number,
+	largestFreeBox: LargestFreeBox,
+	manufacturability: number,
+};
+
+export type PackBlock = {
+	id: string,
+	groupIds: string[],
+	envelope: Box3D,
+};
+
+export type PackPlan = {
+	id: string,
+	packingMode: PackingMode,
+	orientation: Axis,
+	staggerRowAxis?: Axis | null,
+	parallelFactors: [number, number, number],
+	seriesFactors: [number, number, number],
+	anchor: PlacementAnchor,
+	cellSizeMm: [number, number, number],
+	cells: CellPlacement[],
+	groups: SeriesGroup[],
+	seriesOrder: string[],
+	seriesPath: ([number, number, number])[],
+	blocks: PackBlock[],
+	serviceVolumes: ServiceVolume[],
+	bounds: Box3D,
+	metrics: LayoutMetrics,
+};
+
+export type PackingMode = "brick" | "staggered";
+
+export type PlacementAnchor = "tail" | "center" | "nose" | "profile";
+
 export type ProceduralStyle = "finned-case" | "sealed-case" | "pcb";
+
+export type SeriesGroup = {
+	id: string,
+	seriesIndex: number,
+	grid: [number, number, number],
+	center: [number, number, number],
+	cellIds: string[],
+};
+
+export type ServiceKind = "wiring-exit" | "balance-harness" | "power-output";
+
+export type ServiceVolume = {
+	id: string,
+	label: string,
+	kind: ServiceKind,
+	box: Box3D,
+};
 
 export type SourceMetadata = {
 	url: string,
@@ -96,4 +207,22 @@ export type VisualAssetSource = {
 	license: string,
 	licenseUrl: string,
 };
+
+export type WorkspaceEvaluation = {
+	components: ComponentEvaluation[],
+	hasCollision: boolean,
+	freeVolumeMm3: number,
+	freePercent: number,
+	largestFreeBox: LargestFreeBox,
+};
+
+/* Tauri Specta runtime */
+async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {
+    try {
+        return { status: "ok", data: await result };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        return { status: "error", error: e as any };
+    }
+}
 

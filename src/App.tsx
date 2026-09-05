@@ -1,11 +1,11 @@
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import "./App.css";
 import { ControlPanel } from "./components/ControlPanel";
 import { MetricsBar } from "./components/MetricsBar";
 import { ResultsPanel } from "./components/ResultsPanel";
 import { useLayoutEngine } from "./components/use-layout-engine";
+import { useWorkspaceEvaluation } from "./components/use-workspace-evaluation";
 import { componentsLibrary, getCell } from "./data/library";
-import { evaluateWorkspace } from "./domain/geometry";
 import { DEFAULT_HOLDER_OPTIONS, generateHolder } from "./domain/holder";
 import { planSignature } from "./domain/packing";
 import { activeServiceReservations } from "./domain/service-reservations";
@@ -109,11 +109,7 @@ function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [removeComponent, selectedComponentId, setSelectedComponentId]);
 
-  const evaluation = useMemo(
-    () =>
-      selectedPlan ? evaluateWorkspace(config.enclosure, selectedPlan, placements) : undefined,
-    [config.enclosure, placements, selectedPlan],
-  );
+  const evaluation = useWorkspaceEvaluation(config.enclosure, selectedPlan, placements);
 
   const totalCells = config.pack.seriesCount * config.pack.parallelCount;
   const packVoltage = config.pack.seriesCount * cell.nominalVoltageV;

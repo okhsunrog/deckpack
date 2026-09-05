@@ -5,6 +5,8 @@
 //! the CLI and the MCP server are thin wrappers around this crate.
 
 pub mod assets;
+pub mod geometry;
+pub mod heightmap;
 pub mod library;
 pub mod types;
 
