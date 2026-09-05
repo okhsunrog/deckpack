@@ -37,7 +37,9 @@ Debug builds register [`tauri-plugin-mcp-bridge`](https://github.com/hypothesi/m
 claude mcp add --scope user tauri -- npx -y @hypothesi/tauri-mcp-server
 ```
 
-Then run `vp run tauri dev` and use the `tauri` MCP tools.
+Then run `vp run tauri dev` and use the `tauri` MCP tools. The bridge needs `app.withGlobalTauri` in `tauri.conf.json`, which is why it is enabled.
+
+The Rust crates track the unreleased tauri `dev` branch through `[patch.crates-io]` in `src-tauri/Cargo.toml`: it pulls tao 0.37 / wry 0.56 with the Wayland server-side-decoration fixes. Run `cargo update --manifest-path src-tauri/Cargo.toml` to move to a newer `dev` commit.
 
 ## Geometry model
 
