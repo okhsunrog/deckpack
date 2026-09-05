@@ -577,6 +577,52 @@ pub fn enclosure_volume(spec: &EnclosureSpec) -> f64 {
 
 /* ------------------------------------------------------------- evaluation */
 
+/// Pack envelopes and service volumes a component must not intersect.
+pub fn pack_obstacles(plan: &PackPlan) -> Vec<Box3D> {
+    plan.blocks
+        .iter()
+        .map(|block| block.envelope)
+        .chain(plan.service_volumes.iter().map(|volume| volume.box_))
+        .collect()
+}
+
+/// Whether a placement is inside the enclosure and clear of the pack and of
+/// `others`. The height map must already be compiled (see
+/// [`heightmap::ensure_compiled`]).
+pub fn component_fits(
+    enclosure: &EnclosureSpec,
+    pack_obstacles: &[Box3D],
+    others: &[ComponentPlacement],
+    candidate: &ComponentPlacement,
+) -> bool {
+    let container = enclosure_bounds(enclosure);
+    let b = component_box(candidate, enclosure);
+    let outside = if enclosure.as_height_map().is_some() {
+        b.max[2] > container.max[2] + EPSILON
+            || b.min[0] < container.min[0] - EPSILON
+            || b.max[0] > container.max[0] + EPSILON
+            || b.min[1] < container.min[1] - EPSILON
+            || b.max[1] > container.max[1] + EPSILON
+    } else {
+        !contains_box(&container, &b)
+    };
+    if outside {
+        return false;
+    }
+    let footprint = component_footprint(candidate);
+    if pack_obstacles.iter().any(|obstacle| {
+        z_ranges_overlap(&b, obstacle)
+            && footprints_intersect(&footprint, &Footprint2D::of_box(obstacle))
+    }) {
+        return false;
+    }
+    !others.iter().any(|other| {
+        let other_box = component_box(other, enclosure);
+        z_ranges_overlap(&b, &other_box)
+            && footprints_intersect(&footprint, &component_footprint(other))
+    })
+}
+
 pub fn evaluate_workspace(
     enclosure: &EnclosureSpec,
     plan: &PackPlan,

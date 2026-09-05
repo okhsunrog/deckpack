@@ -7,6 +7,9 @@ use std::path::PathBuf;
 use deckpack_core::geometry::evaluate_workspace;
 use deckpack_core::holder::generate_holder;
 use deckpack_core::packing::enumerate_pack_plans;
+use deckpack_core::placement::{
+    PlacementRequest, PlacementSuggestion, auto_place, suggest_placement,
+};
 use deckpack_core::project::{default_config, mesh_enclosure};
 use deckpack_core::*;
 use deckpack_mesh::{DepthMapOptions, ImportOptions, import_enclosure_stl};
@@ -167,6 +170,38 @@ struct HolderResult {
 
 #[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+struct SuggestArgs {
+    config: PlannerConfig,
+    plan_id: String,
+    /// Components already on the deck.
+    existing: Vec<ComponentPlacement>,
+    /// Footprint of the component to place.
+    dimensions_mm: Dimensions3D,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct AutoPlaceArgs {
+    config: PlannerConfig,
+    plan_id: String,
+    /// Components already on the deck (kept as they are).
+    existing: Vec<ComponentPlacement>,
+    /// Components to add; `componentId` from `list_components` or any custom id, `id` any unique string.
+    requests: Vec<PlacementRequest>,
+}
+
+#[derive(Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct AutoPlaceResult {
+    /// Newly placed components (append to `existing`).
+    placed: Vec<ComponentPlacement>,
+    /// Requests that fit nowhere.
+    unplaced: Vec<PlacementRequest>,
+    evaluation: WorkspaceEvaluation,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct ImportArgs {
     /// Absolute path of the STL (open side facing −Z, long side along source Y).
     path: String,
@@ -275,6 +310,53 @@ impl DeckpackServer {
         evaluate_workspace(&args.config.enclosure, &plan, &args.placements)
             .map(Json)
             .map_err(invalid)
+    }
+
+    #[tool(
+        description = "Find a collision-free position (and rotation) for one more component of the given size on a layout.",
+        annotations(read_only_hint = true)
+    )]
+    fn suggest_placement(
+        &self,
+        Parameters(args): Parameters<SuggestArgs>,
+    ) -> Result<Json<Option<PlacementSuggestion>>, ErrorData> {
+        let response = enumerate(&args.config)?;
+        let plan = find_plan(response.plans, &args.plan_id)?;
+        suggest_placement(
+            &args.config.enclosure,
+            &plan,
+            &args.existing,
+            &args.dimensions_mm,
+        )
+        .map(Json)
+        .map_err(invalid)
+    }
+
+    #[tool(
+        description = "Greedily place several components (largest first) on a layout and evaluate the result.",
+        annotations(read_only_hint = true)
+    )]
+    fn auto_place(
+        &self,
+        Parameters(args): Parameters<AutoPlaceArgs>,
+    ) -> Result<Json<AutoPlaceResult>, ErrorData> {
+        let response = enumerate(&args.config)?;
+        let plan = find_plan(response.plans, &args.plan_id)?;
+        let (placed, unplaced) = auto_place(
+            &args.config.enclosure,
+            &plan,
+            &args.existing,
+            &args.requests,
+        )
+        .map_err(invalid)?;
+        let all: Vec<ComponentPlacement> = args.existing.iter().chain(&placed).cloned().collect();
+        let evaluation =
+            evaluate_workspace(&args.config.enclosure, &plan, &all).map_err(invalid)?;
+        Ok(Json(AutoPlaceResult {
+            placed,
+            unplaced,
+            evaluation,
+        }))
     }
 
     #[tool(

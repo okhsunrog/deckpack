@@ -1,7 +1,12 @@
 import { cellsLibrary } from "../data/library";
 import { open } from "@tauri-apps/plugin-dialog";
 import { commands } from "../bindings";
-import { addEnclosureAsset, useEnclosureAssets } from "../data/enclosures";
+import {
+  addEnclosureAsset,
+  removeEnclosureAsset,
+  SPARK_CASE_ID,
+  useEnclosureAssets,
+} from "../data/enclosures";
 import { activeServiceReservations, separatedOffsets } from "../store/service-reservations";
 import type {
   Axis,
@@ -37,6 +42,16 @@ export function ControlPanel({ config }: { config: PlannerConfig }) {
     enclosure.kind === "mesh-heightmap"
       ? enclosureAssets.find((asset) => asset.id === enclosure.assetId)
       : undefined;
+
+  const removeEnclosure = async (id: string) => {
+    const result = await commands.removeEnclosure(id);
+    if (result.status === "error") {
+      window.alert(`Не удалось удалить корпус: ${result.error}`);
+      return;
+    }
+    removeEnclosureAsset(id);
+    setEnclosureAsset(SPARK_CASE_ID);
+  };
 
   const importEnclosure = async () => {
     const path = await open({
@@ -210,7 +225,18 @@ export function ControlPanel({ config }: { config: PlannerConfig }) {
                 поверхность
               </small>
             </div>
-            <em>EXACT</em>
+            {selectedAsset.modelPath ? (
+              <button
+                type="button"
+                className="asset-remove"
+                title="Удалить импортированный корпус"
+                onClick={() => void removeEnclosure(selectedAsset.id)}
+              >
+                Удалить
+              </button>
+            ) : (
+              <em>EXACT</em>
+            )}
           </div>
         ) : (
           <div className="dimension-grid">

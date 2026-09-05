@@ -47,7 +47,7 @@ deckpack library cells
 
 ### MCP server
 
-`deckpack-mcp` speaks MCP over stdio and offers `default_config`, `list_cells`, `list_components`, `list_enclosures`, `plan_pack`, `get_plan`, `evaluate_layout`, `generate_holder` and `import_enclosure`. Tool arguments and results use the same camelCase JSON as the app. Register it with, for example:
+`deckpack-mcp` speaks MCP over stdio and offers `default_config`, `list_cells`, `list_components`, `list_enclosures`, `plan_pack`, `get_plan`, `evaluate_layout`, `suggest_placement`, `auto_place`, `generate_holder` and `import_enclosure`. Tool arguments and results use the same camelCase JSON as the app. Register it with, for example:
 
 ```bash
 cargo build --release -p deckpack-mcp

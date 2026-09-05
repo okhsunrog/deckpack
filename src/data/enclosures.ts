@@ -30,6 +30,10 @@ export function useEnclosureAssets(): HeightMapAsset[] {
   }, enclosureAssets);
 }
 
+export function removeEnclosureAsset(id: string): void {
+  publish(assets.filter((existing) => existing.id !== id));
+}
+
 export function addEnclosureAsset(asset: HeightMapAsset): void {
   publish([...assets.filter((existing) => existing.id !== asset.id), asset]);
 }

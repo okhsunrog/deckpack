@@ -23,6 +23,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::holder_pieces,
             commands::export_holder_stl,
             enclosures::import_enclosure,
+            enclosures::remove_enclosure,
+            commands::suggest_placement,
             projects::load_project,
             projects::save_project,
             projects::recent_projects,

@@ -39,6 +39,15 @@ pub fn replace(asset: HeightMapAsset) {
     assets.push(asset);
 }
 
+/// Unregister an asset; returns whether it was known.
+pub fn remove(id: &str) -> bool {
+    let mut assets = ASSETS.write().expect("asset registry poisoned");
+    let before = assets.len();
+    assets.retain(|existing| existing.id != id);
+    crate::heightmap::invalidate(id);
+    assets.len() != before
+}
+
 pub fn with_asset<R>(id: &str, f: impl FnOnce(&HeightMapAsset) -> R) -> Result<R, AssetError> {
     let assets = ASSETS.read().expect("asset registry poisoned");
     assets

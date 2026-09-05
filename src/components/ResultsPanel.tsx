@@ -1,5 +1,11 @@
 import { componentsLibrary } from "../data/library";
-import type { ComponentPlacement, PackPlan, WorkspaceEvaluation } from "../bindings";
+import {
+  commands,
+  type ComponentPlacement,
+  type ComponentSpec,
+  type PackPlan,
+  type WorkspaceEvaluation,
+} from "../bindings";
 import { boxSize } from "../lib/box";
 import { formatFactors, planSignature } from "../lib/plan";
 import { usePlannerStore } from "../store/planner-store";
@@ -195,6 +201,29 @@ export function ResultsPanel({
   const rightPanel = usePlannerStore((state) => state.rightPanel);
   const setRightPanel = usePlannerStore((state) => state.setRightPanel);
   const addComponent = usePlannerStore((state) => state.addComponent);
+  const enclosure = usePlannerStore((state) => state.config.enclosure);
+  const addComponentSmart = async (spec: ComponentSpec) => {
+    if (!selectedPlan) {
+      addComponent(spec);
+      return;
+    }
+    const result = await commands.suggestPlacement(
+      enclosure,
+      selectedPlan,
+      placements,
+      spec.dimensionsMm,
+    );
+    if (result.status === "error") {
+      console.error("Placement suggestion failed", result.error);
+      addComponent(spec);
+      return;
+    }
+    if (!result.data) {
+      window.alert(`Для ${spec.model} не нашлось свободного места на деке при этой раскладке.`);
+      return;
+    }
+    addComponent(spec, result.data);
+  };
   const profiledEnclosure = usePlannerStore(
     (state) => state.config.enclosure.kind === "mesh-heightmap",
   );
@@ -330,7 +359,7 @@ export function ResultsPanel({
                 </span>
                 <button
                   type="button"
-                  onClick={() => addComponent(component)}
+                  onClick={() => void addComponentSmart(component)}
                   aria-label={`Добавить ${component.model}`}
                 >
                   +

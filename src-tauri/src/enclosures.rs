@@ -116,3 +116,25 @@ pub async fn import_enclosure(app: AppHandle, path: String) -> Result<HeightMapA
     .await
     .map_err(|error| format!("import task failed: {error}"))?
 }
+
+/// Delete an imported enclosure (its files and its registration). Bundled
+/// assets cannot be removed.
+#[tauri::command]
+#[specta::specta]
+pub fn remove_enclosure(app: AppHandle, id: String) -> Result<(), String> {
+    if id == deckpack_core::project::SPARK_CASE_ID {
+        return Err("the bundled Spark case cannot be removed".into());
+    }
+    let dir = imports_dir(&app)?;
+    for extension in ["json", "stl"] {
+        let path = dir.join(format!("{id}.{extension}"));
+        if path.exists() {
+            std::fs::remove_file(&path)
+                .map_err(|error| format!("cannot delete {}: {error}", path.display()))?;
+        }
+    }
+    if !assets::remove(&id) {
+        return Err(format!("no imported enclosure `{id}`"));
+    }
+    Ok(())
+}

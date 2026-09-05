@@ -1845,3 +1845,16 @@
   color: #d8b46a;
   border-color: rgba(216, 180, 106, 0.7);
 }
+
+.asset-remove {
+  align-self: start;
+  padding: 3px 7px;
+  border: 1px solid #5a3038;
+  border-radius: 2px;
+  font:
+    500 9px/1 "JetBrains Mono",
+    monospace;
+  letter-spacing: 0.06em;
+  color: var(--danger);
+  background: transparent;
+}

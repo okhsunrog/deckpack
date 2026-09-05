@@ -11,6 +11,7 @@ pub mod holder;
 pub mod jsmath;
 pub mod library;
 pub mod packing;
+pub mod placement;
 pub mod project;
 pub mod service;
 pub mod types;

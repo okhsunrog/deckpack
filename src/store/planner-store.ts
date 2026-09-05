@@ -123,7 +123,11 @@ interface PlannerState {
   setRightPanel: (panel: "variants" | "components") => void;
   setShowHolders: (show: boolean) => void;
   setHolderStyle: (style: HolderStyle) => void;
-  addComponent: (spec: ComponentSpec) => void;
+  /** Add a component at the suggested spot, or at the tail if none was found. */
+  addComponent: (
+    spec: ComponentSpec,
+    suggestion?: { position: [number, number]; rotationDeg: number },
+  ) => void;
   updateComponent: (id: string, patch: Partial<ComponentPlacement>) => void;
   removeComponent: (id: string) => void;
   resetProject: () => void;
@@ -246,7 +250,7 @@ export const usePlannerStore = create<PlannerState>()(
       setHolderStyle: (holderStyle) => set({ holderStyle }),
       setSelectedComponentId: (selectedComponentId) => set({ selectedComponentId }),
       setRightPanel: (rightPanel) => set({ rightPanel }),
-      addComponent: (spec) =>
+      addComponent: (spec, suggestion) =>
         set((state) => {
           const id = `${spec.id}-${placementId()}`;
           const tailX =
@@ -258,8 +262,8 @@ export const usePlannerStore = create<PlannerState>()(
               {
                 id,
                 componentId: spec.id,
-                position: [tailX, spreadY],
-                rotationDeg: 0,
+                position: suggestion?.position ?? [tailX, spreadY],
+                rotationDeg: suggestion?.rotationDeg ?? 0,
                 tiltDeg: 0,
                 dimensionsMm: { ...spec.dimensionsMm },
               },

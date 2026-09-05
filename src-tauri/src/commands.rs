@@ -1,9 +1,11 @@
 //! IPC surface of the desktop app: thin wrappers over `deckpack-core`.
 
+use deckpack_core::Dimensions3D;
+use deckpack_core::placement::PlacementSuggestion;
 use deckpack_core::{
     CellSpec, ComponentPlacement, ComponentSpec, EnclosureSpec, EnumerationRequest,
     EnumerationResponse, HeightMapAsset, HolderOptions, HolderPieceSummary, HolderPieces, PackPlan,
-    ToleranceLayer, WorkspaceEvaluation, assets, geometry, holder, library, packing,
+    ToleranceLayer, WorkspaceEvaluation, assets, geometry, holder, library, packing, placement,
 };
 use serde::Serialize;
 use specta::Type;
@@ -100,4 +102,18 @@ pub async fn export_holder_stl(
     })
     .await
     .map_err(|error| format!("holder export task failed: {error}"))?
+}
+
+/// Where a new component of this size fits: deck ends first, then the centre
+/// line, trying a quarter turn if the flat orientation finds no room.
+#[tauri::command]
+#[specta::specta]
+pub fn suggest_placement(
+    enclosure: EnclosureSpec,
+    plan: PackPlan,
+    existing: Vec<ComponentPlacement>,
+    dimensions: Dimensions3D,
+) -> Result<Option<PlacementSuggestion>, String> {
+    placement::suggest_placement(&enclosure, &plan, &existing, &dimensions)
+        .map_err(|error| error.to_string())
 }
