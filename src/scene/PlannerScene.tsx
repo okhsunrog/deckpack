@@ -15,6 +15,7 @@ import {
   BufferGeometry,
   Color,
   CylinderGeometry,
+  BackSide,
   DoubleSide,
   EdgesGeometry,
   Float32BufferAttribute,
@@ -30,10 +31,9 @@ import {
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { getHeightMapAsset, type MeshHeightMapEnclosureSpec } from "../data/enclosures";
-import type { HolderStyle } from "../bindings";
+import type { HolderCsg, HolderOptions } from "../bindings";
 import { boxCenter, boxSize, nominalComponentBox } from "../lib/box";
-import { assembledPieceTriangles } from "./holder-mesh";
-import { DEFAULT_HOLDER_OPTIONS, useHolderPieces } from "./use-holder-pieces";
+import { useHolderMesh } from "./use-holder-mesh";
 import type {
   Box3D,
   CellSpec,
@@ -57,7 +57,8 @@ interface PlannerSceneProps {
   cell: CellSpec;
   toleranceStack: ToleranceLayer[];
   showHolders: boolean;
-  holderStyle: HolderStyle;
+  holderOptions: HolderOptions;
+  holderCsg: HolderCsg;
   components: ComponentPlacement[];
   componentSpecs: ComponentSpec[];
   evaluation?: WorkspaceEvaluation;
@@ -300,49 +301,35 @@ function HolderObjects({
   cell,
   toleranceStack,
   enclosure,
-  style,
+  options,
+  csg,
 }: {
   plan: PackPlan;
   cell: CellSpec;
   toleranceStack: ToleranceLayer[];
   enclosure: EnclosureSpec;
-  style: HolderStyle;
+  options: HolderOptions;
+  csg: HolderCsg;
 }) {
-  const options = useMemo(() => ({ ...DEFAULT_HOLDER_OPTIONS, style }), [style]);
-  const layout = useHolderPieces(plan, cell, toleranceStack, enclosure, options);
+  const positions = useHolderMesh(plan, cell, toleranceStack, enclosure, options, csg);
   const geometry = useDisposable(
     useMemo(() => {
       const result = new BufferGeometry();
-      if (!layout) return result;
-      const positions: number[] = [];
-      for (const piece of layout.pieces) {
-        positions.push(...assembledPieceTriangles(piece, layout));
-      }
+      if (!positions || positions.length === 0) return result;
       result.setAttribute("position", new Float32BufferAttribute(positions, 3));
       result.computeVertexNormals();
       return result;
-    }, [layout]),
+    }, [positions]),
   );
   return (
     <group>
-      <mesh geometry={geometry}>
+      <mesh geometry={geometry} castShadow receiveShadow>
         <meshStandardMaterial
-          color="#e0b964"
-          emissive="#5c451a"
-          emissiveIntensity={0.3}
-          roughness={0.5}
+          color="#d9a94f"
+          emissive="#3a2a0e"
+          emissiveIntensity={0.25}
+          roughness={0.55}
           metalness={0.05}
-          side={DoubleSide}
-        />
-      </mesh>
-      {/* X-ray pass: the parts hidden behind cells stay faintly readable. */}
-      <mesh geometry={geometry} renderOrder={40}>
-        <meshBasicMaterial
-          color="#e0b964"
-          transparent
-          opacity={0.16}
-          depthTest={false}
-          depthWrite={false}
           side={DoubleSide}
         />
       </mesh>
@@ -389,33 +376,6 @@ function CellInstances({ plan }: { plan: PackPlan }) {
       castShadow
       receiveShadow
     />
-  );
-}
-
-function BoxObject({
-  box,
-  color,
-  opacity = 0.2,
-  wireframe = false,
-}: {
-  box: { min: Vec3; max: Vec3 };
-  color: string;
-  opacity?: number;
-  wireframe?: boolean;
-}) {
-  const size = boxSize(box);
-  const center = boxCenter(box);
-  return (
-    <mesh position={center}>
-      <boxGeometry args={size} />
-      <meshStandardMaterial
-        color={color}
-        transparent
-        opacity={opacity}
-        wireframe={wireframe}
-        depthWrite={!wireframe}
-      />
-    </mesh>
   );
 }
 
@@ -604,17 +564,19 @@ function MeshEnclosureObject({ enclosure }: { enclosure: MeshHeightMapEnclosureS
   return (
     <group>
       <mesh geometry={geometry} receiveShadow>
+        {/* Back faces only: the floor and far walls stay visible, the wall
+            between the camera and the pack is culled instead of hazing it. */}
         <meshPhysicalMaterial
-          color="#263840"
+          color="#2b3f48"
           emissive="#17313a"
           emissiveIntensity={0.08}
           transparent
-          opacity={0.34}
+          opacity={0.55}
           roughness={0.58}
           metalness={0.12}
           clearcoat={0.35}
           clearcoatRoughness={0.72}
-          side={DoubleSide}
+          side={BackSide}
           depthWrite={false}
         />
       </mesh>
@@ -903,7 +865,12 @@ function SceneContents(props: SceneContentsProps) {
       <EnclosureObject enclosure={enclosure} />
       {plan && (
         <>
-          <BoxObject box={plan.blocks[0].envelope} color="#d99a46" opacity={0.06} />
+          <BoxEdges
+            size={boxSize(plan.blocks[0].envelope)}
+            color="#d99a46"
+            opacity={0.35}
+            position={boxCenter(plan.blocks[0].envelope)}
+          />
           <CellInstances plan={plan} />
           {props.showHolders && plan.orientation !== "z" && (
             <HolderObjects
@@ -911,7 +878,8 @@ function SceneContents(props: SceneContentsProps) {
               cell={props.cell}
               toleranceStack={props.toleranceStack}
               enclosure={enclosure}
-              style={props.holderStyle}
+              options={props.holderOptions}
+              csg={props.holderCsg}
             />
           )}
           {plan.serviceVolumes.map((volume) => {

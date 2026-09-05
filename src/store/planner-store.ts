@@ -17,8 +17,10 @@ import type {
   ServiceReservation,
   ToleranceLayer,
   WiringExitMode,
-  HolderStyle,
+  HolderCsg,
+  HolderOptions,
 } from "../bindings";
+import { DEFAULT_HOLDER_OPTIONS, type HolderSettings } from "../scene/holder-mesh";
 
 export const defaultConfig: PlannerConfig = {
   enclosure: createSparkCaseEnclosure(),
@@ -113,7 +115,8 @@ interface PlannerState {
   selectedComponentId?: string;
   rightPanel: "variants" | "components";
   showHolders: boolean;
-  holderStyle: HolderStyle;
+  holderOptions: HolderSettings;
+  holderCsg: HolderCsg;
   /** File the project was opened from or saved to; undefined for an unsaved project. */
   projectPath?: string;
   setProjectPath: (path: string | undefined) => void;
@@ -130,7 +133,8 @@ interface PlannerState {
   setSelectedComponentId: (id: string | undefined) => void;
   setRightPanel: (panel: "variants" | "components") => void;
   setShowHolders: (show: boolean) => void;
-  setHolderStyle: (style: HolderStyle) => void;
+  setHolderOptions: (patch: Partial<HolderOptions>) => void;
+  setHolderCsg: (patch: Partial<HolderCsg>) => void;
   /** Add a component at the suggested spot, or at the tail if none was found. */
   addComponent: (
     spec: ComponentSpec,
@@ -152,7 +156,8 @@ export const usePlannerStore = create<PlannerState>()(
       placements: [],
       rightPanel: "variants",
       showHolders: true,
-      holderStyle: "full",
+      holderOptions: DEFAULT_HOLDER_OPTIONS,
+      holderCsg: { rails: false },
       setProjectPath: (projectPath) => set({ projectPath }),
       loadProject: (project, projectPath) => {
         const config = sanitizePersistedConfig(project.config);
@@ -255,7 +260,9 @@ export const usePlannerStore = create<PlannerState>()(
       setSelectedPlan: (selectedPlanId, selectedPlanKey) =>
         set({ selectedPlanId, selectedPlanKey }),
       setShowHolders: (showHolders) => set({ showHolders }),
-      setHolderStyle: (holderStyle) => set({ holderStyle }),
+      setHolderOptions: (patch) =>
+        set((state) => ({ holderOptions: { ...state.holderOptions, ...patch } })),
+      setHolderCsg: (patch) => set((state) => ({ holderCsg: { ...state.holderCsg, ...patch } })),
       setSelectedComponentId: (selectedComponentId) => set({ selectedComponentId }),
       setRightPanel: (rightPanel) => set({ rightPanel }),
       addComponent: (spec, suggestion) =>
@@ -313,7 +320,8 @@ export const usePlannerStore = create<PlannerState>()(
         placements: [] as ComponentPlacement[],
         selectedPlanId: undefined as string | undefined,
         selectedPlanKey: undefined as string | undefined,
-        holderStyle: "full" as HolderStyle,
+        holderOptions: DEFAULT_HOLDER_OPTIONS,
+        holderCsg: { rails: false } as HolderCsg,
       }),
       merge: (persisted, current) => {
         const stored = (persisted ?? {}) as Partial<{
@@ -322,6 +330,8 @@ export const usePlannerStore = create<PlannerState>()(
           selectedPlanId: unknown;
           selectedPlanKey: unknown;
           holderStyle: unknown;
+          holderOptions: unknown;
+          holderCsg: unknown;
           projectPath: unknown;
         }>;
         const config = sanitizePersistedConfig(stored.config);
@@ -334,7 +344,10 @@ export const usePlannerStore = create<PlannerState>()(
             typeof stored.selectedPlanId === "string" ? stored.selectedPlanId : undefined,
           selectedPlanKey:
             typeof stored.selectedPlanKey === "string" ? stored.selectedPlanKey : undefined,
-          holderStyle: stored.holderStyle === "edge" ? "edge" : "full",
+          holderOptions: sanitizeHolderOptions(stored.holderOptions, stored.holderStyle),
+          holderCsg: {
+            rails: (stored.holderCsg as { rails?: unknown } | undefined)?.rails === true,
+          },
           projectPath: typeof stored.projectPath === "string" ? stored.projectPath : undefined,
         };
       },
@@ -343,7 +356,8 @@ export const usePlannerStore = create<PlannerState>()(
         placements: state.placements,
         selectedPlanId: state.selectedPlanId,
         selectedPlanKey: state.selectedPlanKey,
-        holderStyle: state.holderStyle,
+        holderOptions: state.holderOptions,
+        holderCsg: state.holderCsg,
         projectPath: state.projectPath,
       }),
     },
@@ -360,4 +374,25 @@ function placementId(): string {
 
 export function toleranceById(stack: ToleranceLayer[], id: string) {
   return stack.find((layer) => layer.id === id);
+}
+
+/** Stored holder options merged over the defaults; legacy `holderStyle` is honoured. */
+function sanitizeHolderOptions(stored: unknown, legacyStyle: unknown): HolderSettings {
+  const options: HolderSettings = { ...DEFAULT_HOLDER_OPTIONS };
+  if (stored && typeof stored === "object") {
+    const record = stored as Record<string, unknown>;
+    for (const key of Object.keys(options) as Array<keyof HolderSettings>) {
+      const value = record[key];
+      if (
+        typeof value === typeof options[key] &&
+        (typeof value !== "number" || Number.isFinite(value))
+      ) {
+        (options as Record<string, unknown>)[key] = value;
+      }
+    }
+    if (options.style !== "full" && options.style !== "edge") options.style = "full";
+  } else if (legacyStyle === "edge") {
+    options.style = "edge";
+  }
+  return options;
 }

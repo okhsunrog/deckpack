@@ -10,7 +10,6 @@ import { useLayoutEngine } from "./components/use-layout-engine";
 import { useWorkspaceEvaluation } from "./components/use-workspace-evaluation";
 import { componentsLibrary, getCell } from "./data/library";
 import { PlannerScene } from "./scene/PlannerScene";
-import { DEFAULT_HOLDER_OPTIONS } from "./scene/use-holder-pieces";
 import { usePlannerStore } from "./store/planner-store";
 import type { CellSpec, PackPlan } from "./bindings";
 import { planSignature } from "./lib/plan";
@@ -30,7 +29,8 @@ async function exportHolder(plan: PackPlan, cell: CellSpec) {
       cell,
       state.config.pack.toleranceStack,
       state.config.enclosure,
-      { ...DEFAULT_HOLDER_OPTIONS, style: state.holderStyle },
+      state.holderOptions,
+      state.holderCsg,
       path,
     );
     if (result.status === "error") throw new Error(result.error);
@@ -61,9 +61,10 @@ function App() {
   const resetProject = usePlannerStore((state) => state.resetProject);
   const showHolders = usePlannerStore((state) => state.showHolders);
   const setShowHolders = usePlannerStore((state) => state.setShowHolders);
-  const holderStyle = usePlannerStore((state) => state.holderStyle);
+  const holderOptions = usePlannerStore((state) => state.holderOptions);
+  const holderCsg = usePlannerStore((state) => state.holderCsg);
   const projectPath = usePlannerStore((state) => state.projectPath);
-  const setHolderStyle = usePlannerStore((state) => state.setHolderStyle);
+  const setHolderOptions = usePlannerStore((state) => state.setHolderOptions);
   const cell = getCell(config.pack.cellId);
   const { plans, exploredCount, loading } = useLayoutEngine(config, cell);
   // Ids change whenever tolerances or the enclosure change, so fall back to
@@ -187,9 +188,11 @@ function App() {
                   type="button"
                   className="legend-toggle active"
                   title="Цельная лента держит банку за середину; краевые полоски — только за края у торцов, как готовые модульные холдеры"
-                  onClick={() => setHolderStyle(holderStyle === "full" ? "edge" : "full")}
+                  onClick={() =>
+                    setHolderOptions({ style: holderOptions.style === "full" ? "edge" : "full" })
+                  }
                 >
-                  {holderStyle === "full" ? "лента" : "края"}
+                  {holderOptions.style === "full" ? "лента" : "края"}
                 </button>
               )}
             </div>
@@ -201,7 +204,8 @@ function App() {
               cell={cell}
               toleranceStack={config.pack.toleranceStack}
               showHolders={showHolders}
-              holderStyle={holderStyle}
+              holderOptions={holderOptions}
+              holderCsg={holderCsg}
               components={placements}
               componentSpecs={componentsLibrary}
               evaluation={evaluation}

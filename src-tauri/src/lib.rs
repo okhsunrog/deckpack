@@ -20,7 +20,6 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::enclosure_assets,
             commands::evaluate_workspace,
             commands::enumerate_plans,
-            commands::holder_pieces,
             commands::export_holder_stl,
             enclosures::import_enclosure,
             enclosures::remove_enclosure,
@@ -33,6 +32,11 @@ fn specta_builder() -> Builder<tauri::Wry> {
 }
 
 const BINDINGS_PATH: &str = "../src/bindings.ts";
+
+/// Commands with raw (non-JSON) responses that tauri-specta cannot describe.
+fn raw_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
+    tauri::generate_handler![commands::holder_mesh]
+}
 
 fn export_bindings(builder: &Builder<tauri::Wry>) {
     builder
@@ -55,7 +59,19 @@ pub fn run() {
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(specta.invoke_handler());
+        .invoke_handler({
+            // `holder_mesh` returns raw bytes, which tauri-specta cannot type;
+            // route it to a plain handler and everything else to specta's.
+            let typed = specta.invoke_handler();
+            let raw = raw_handler();
+            move |invoke| {
+                if invoke.message.command() == "holder_mesh" {
+                    raw(invoke)
+                } else {
+                    typed(invoke)
+                }
+            }
+        });
 
     // Debug-only bridge for the Tauri MCP server (@hypothesi/tauri-mcp-server):
     // lets an AI assistant drive the webview over a local WebSocket (port 9223+).

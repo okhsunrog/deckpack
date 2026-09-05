@@ -325,3 +325,94 @@ mod span_tests {
         assert_eq!(b.report.genus, 2);
     }
 }
+
+/* --------------------------------------------------- whole-holder builds */
+
+use deckpack_core::HolderPieces;
+
+/// One built piece with the frame data needed to place it back in the
+/// enclosure: print coordinates are `(t − t0, z − z_base, s)`.
+pub struct BuiltPiece {
+    pub report: CsgReport,
+    pub solid: Manifold,
+    t0: f64,
+    z_base: f64,
+    axial_start: f64,
+}
+
+/// Build every piece of a holder with shared rail positions.
+pub fn build_holder(
+    layout: &HolderPieces,
+    options: &CsgOptions,
+) -> Result<Vec<BuiltPiece>, CsgError> {
+    let span = RailSpan::of(&layout.pieces);
+    layout
+        .pieces
+        .iter()
+        .map(|piece| {
+            let solid = piece_with_rails(piece, options, span)?;
+            let size = solid.bounding_box().size();
+            Ok(BuiltPiece {
+                report: CsgReport {
+                    label: piece.label.clone(),
+                    triangles: solid.num_tri(),
+                    volume_mm3: solid.volume(),
+                    genus: solid.genus(),
+                    size_mm: [size.x, size.y, size.z],
+                },
+                solid,
+                t0: piece.t[0],
+                z_base: piece.bottom.iter().copied().fold(f64::INFINITY, f64::min),
+                axial_start: piece.axial_center_mm - piece.length_mm / 2.0,
+            })
+        })
+        .collect()
+}
+
+/// Triangles of all pieces placed in the enclosure (app coordinates), as a
+/// flat `x y z` list for a three.js buffer.
+pub fn assembled_positions(layout: &HolderPieces, built: &[BuiltPiece]) -> Vec<f32> {
+    let lateral = layout.lateral_index as usize;
+    let axial = layout.axial_index as usize;
+    // (x, y, s) → (lateral: x+t0, 2: y+z_base, axial: start+s). The axis
+    // permutation is odd when the lateral axis is X, which mirrors the
+    // winding; swap two vertices then so faces stay outward.
+    let flip = lateral == 0;
+    let mut out = Vec::new();
+    for piece in built {
+        let map = |v: [f64; 3]| -> [f32; 3] {
+            let mut p = [0.0f64; 3];
+            p[lateral] = v[0] + piece.t0;
+            p[2] = v[1] + piece.z_base;
+            p[axial] = piece.axial_start + v[2];
+            [p[0] as f32, p[1] as f32, p[2] as f32]
+        };
+        for triangle in triangles(&piece.solid) {
+            let [a, b, c] = triangle.vertices;
+            let (b, c) = if flip { (c, b) } else { (b, c) };
+            for v in [map(a), map(b), map(c)] {
+                out.extend_from_slice(&v);
+            }
+        }
+    }
+    out
+}
+
+/// All pieces side by side on the print bed in one binary STL, `gap_mm`
+/// apart along X.
+pub fn layout_stl(built: &[BuiltPiece], gap_mm: f64) -> Vec<u8> {
+    let mut all = Vec::new();
+    let mut offset = 0.0;
+    for piece in built {
+        let bounds = piece.solid.bounding_box();
+        let shift = offset - bounds.min.x;
+        for mut triangle in triangles(&piece.solid) {
+            for v in &mut triangle.vertices {
+                v[0] += shift;
+            }
+            all.push(triangle);
+        }
+        offset += bounds.size().x + gap_mm;
+    }
+    write_binary_stl(&all)
+}

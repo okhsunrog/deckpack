@@ -36,6 +36,10 @@ const FACE_LABELS: Record<PackFace, string> = {
 export function ControlPanel({ config }: { config: PlannerConfig }) {
   const setEnclosureKind = usePlannerStore((state) => state.setEnclosureKind);
   const setEnclosureAsset = usePlannerStore((state) => state.setEnclosureAsset);
+  const holderOptions = usePlannerStore((state) => state.holderOptions);
+  const holderCsg = usePlannerStore((state) => state.holderCsg);
+  const setHolderOptions = usePlannerStore((state) => state.setHolderOptions);
+  const setHolderCsg = usePlannerStore((state) => state.setHolderCsg);
   const enclosureAssets = useEnclosureAssets();
   const enclosure = config.enclosure;
   const selectedAsset =
@@ -375,6 +379,86 @@ export function ControlPanel({ config }: { config: PlannerConfig }) {
               onChange={(value) => setTolerance(layer.id, value)}
             />
           ))}
+        </div>
+      </section>
+
+      <section className="control-section">
+        <div className="section-title">
+          <h3>Холдер</h3>
+          <span>CSG / STL</span>
+        </div>
+        <p className="section-note">
+          Те же детали, что уходят на печать. Основание под банками задаёт слой «Дно холдера».
+        </p>
+        <div className="segmented">
+          <button
+            type="button"
+            className={holderOptions.style === "full" ? "active" : ""}
+            onClick={() => setHolderOptions({ style: "full" })}
+          >
+            Лента
+          </button>
+          <button
+            type="button"
+            className={holderOptions.style === "edge" ? "active" : ""}
+            onClick={() => setHolderOptions({ style: "edge" })}
+          >
+            Края
+          </button>
+        </div>
+        <div className="dimension-grid">
+          <NumberField
+            label="Полоска"
+            value={holderOptions.edgeStripWidthMm}
+            min={4}
+            max={30}
+            unit="мм"
+            onChange={(value) => setHolderOptions({ edgeStripWidthMm: value })}
+          />
+          <NumberField
+            label="Перемычка"
+            value={holderOptions.webMm}
+            min={0.8}
+            max={5}
+            step={0.1}
+            unit="мм"
+            onChange={(value) => setHolderOptions({ webMm: value })}
+          />
+          <NumberField
+            label="Зубец"
+            value={holderOptions.cuspHeight}
+            min={0.3}
+            max={1}
+            step={0.1}
+            unit="r"
+            onChange={(value) => setHolderOptions({ cuspHeight: value })}
+          />
+        </div>
+        <div className="check-row">
+          <label>
+            <input
+              type="checkbox"
+              checked={holderOptions.spacers}
+              onChange={(event) => setHolderOptions({ spacers: event.currentTarget.checked })}
+            />
+            Спейсеры между слоями
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={holderCsg.rails}
+              onChange={(event) => setHolderCsg({ rails: event.currentTarget.checked })}
+            />
+            Рейки с отверстиями M3
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={holderOptions.cap}
+              onChange={(event) => setHolderOptions({ cap: event.currentTarget.checked })}
+            />
+            Крышка над верхним слоем
+          </label>
         </div>
       </section>
 

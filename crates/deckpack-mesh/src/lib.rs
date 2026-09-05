@@ -13,6 +13,9 @@ pub mod stl;
 
 pub use depth::DepthMapOptions;
 pub use export::cells_stl;
-pub use holder_csg::{CsgOptions, CsgPiece, CsgReport, RailSpan, build_piece};
+pub use holder_csg::{
+    BuiltPiece, CsgOptions, CsgPiece, CsgReport, RailSpan, assembled_positions, build_holder,
+    build_piece, layout_stl,
+};
 pub use import::{ImportError, ImportOptions, ImportedEnclosure, import_enclosure_stl};
 pub use stl::{StlError, Triangle, parse_stl, write_binary_stl};

@@ -15,6 +15,10 @@ opt-level = 2
 [profile.dev.package.deckpack-mesh]
 opt-level = 2
 
+# The holder preview rebuilds CSG solids on every option change.
+[profile.dev.package.manifold-rust]
+opt-level = 2
+
 # Track the unreleased tauri `dev` branch: it depends on tao 0.37 / wry 0.56,
 # which carry the Wayland decoration fixes (tao #1218: no client-side
 # decorations when the compositor offers server-side ones) that the

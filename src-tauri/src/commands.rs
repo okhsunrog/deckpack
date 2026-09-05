@@ -4,10 +4,11 @@ use deckpack_core::Dimensions3D;
 use deckpack_core::placement::PlacementSuggestion;
 use deckpack_core::{
     CellSpec, ComponentPlacement, ComponentSpec, EnclosureSpec, EnumerationRequest,
-    EnumerationResponse, HeightMapAsset, HolderOptions, HolderPieceSummary, HolderPieces, PackPlan,
+    EnumerationResponse, HeightMapAsset, HolderOptions, HolderPieceSummary, PackPlan,
     ToleranceLayer, WorkspaceEvaluation, assets, geometry, holder, library, packing, placement,
 };
-use serde::Serialize;
+use deckpack_mesh::{CsgOptions, assembled_positions, build_holder, layout_stl};
+use serde::{Deserialize, Serialize};
 use specta::Type;
 
 #[tauri::command]
@@ -54,21 +55,6 @@ pub async fn enumerate_plans(request: EnumerationRequest) -> Result<EnumerationR
     .map_err(|error| format!("enumeration task failed: {error}"))?
 }
 
-/// Wave-comb profiles of the holder for the plan; the scene extrudes them
-/// into a preview mesh.
-#[tauri::command]
-#[specta::specta]
-pub fn holder_pieces(
-    plan: PackPlan,
-    cell: CellSpec,
-    tolerance_stack: Vec<ToleranceLayer>,
-    enclosure: EnclosureSpec,
-    options: HolderOptions,
-) -> Result<HolderPieces, String> {
-    holder::compute_holder_pieces(&plan, &cell, &tolerance_stack, &enclosure, &options)
-        .map_err(|error| error.to_string())
-}
-
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct HolderExport {
@@ -77,8 +63,25 @@ pub struct HolderExport {
     pub path: String,
 }
 
-/// Generate the holder STL and write it to `path` (chosen by the user
-/// through the native save dialog).
+/// CSG settings the app exposes for the printable holder.
+#[derive(Deserialize, Type, Clone, Copy, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct HolderCsg {
+    /// End rails with screw holes (8 mm rails, 3.2 mm holes).
+    pub rails: bool,
+}
+
+impl HolderCsg {
+    fn options(self) -> CsgOptions {
+        CsgOptions {
+            rail_width_mm: if self.rails { 8.0 } else { 0.0 },
+            ..CsgOptions::default()
+        }
+    }
+}
+
+/// Generate the holder pieces with CSG, lay them out for the print bed and
+/// write one binary STL to `path` (chosen through the native save dialog).
 #[tauri::command]
 #[specta::specta]
 pub async fn export_holder_stl(
@@ -87,21 +90,54 @@ pub async fn export_holder_stl(
     tolerance_stack: Vec<ToleranceLayer>,
     enclosure: EnclosureSpec,
     options: HolderOptions,
+    csg: HolderCsg,
     path: String,
 ) -> Result<HolderExport, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let build = holder::generate_holder(&plan, &cell, &tolerance_stack, &enclosure, &options)
-            .map_err(|error| error.to_string())?;
-        std::fs::write(&path, &build.stl)
-            .map_err(|error| format!("cannot write {path}: {error}"))?;
+        let layout =
+            holder::compute_holder_pieces(&plan, &cell, &tolerance_stack, &enclosure, &options)
+                .map_err(|error| error.to_string())?;
+        // Profile summaries carry the wall-thickness check; the bytes come from CSG.
+        let summary = holder::build_stl(&layout.pieces, &options);
+        let built = build_holder(&layout, &csg.options()).map_err(|error| error.to_string())?;
+        let stl = layout_stl(&built, options.layout_gap_mm);
+        std::fs::write(&path, &stl).map_err(|error| format!("cannot write {path}: {error}"))?;
         Ok(HolderExport {
-            pieces: build.pieces,
-            byte_length: build.stl.len() as u32,
+            pieces: summary.pieces,
+            byte_length: stl.len() as u32,
             path,
         })
     })
     .await
     .map_err(|error| format!("holder export task failed: {error}"))?
+}
+
+/// Triangles of the holder placed in the enclosure, as little-endian `f32`
+/// `x y z` triplets (raw bytes: too large for JSON on every style change).
+/// Registered outside tauri-specta because the raw response has no TypeScript
+/// type; `src/scene/holder-mesh.ts` wraps it.
+#[tauri::command]
+pub fn holder_mesh(
+    plan: PackPlan,
+    cell: CellSpec,
+    tolerance_stack: Vec<ToleranceLayer>,
+    enclosure: EnclosureSpec,
+    options: HolderOptions,
+    csg: HolderCsg,
+) -> Result<tauri::ipc::Response, String> {
+    if plan.orientation == deckpack_core::Axis::Z {
+        return Ok(tauri::ipc::Response::new(Vec::new()));
+    }
+    let layout =
+        holder::compute_holder_pieces(&plan, &cell, &tolerance_stack, &enclosure, &options)
+            .map_err(|error| error.to_string())?;
+    let built = build_holder(&layout, &csg.options()).map_err(|error| error.to_string())?;
+    let positions = assembled_positions(&layout, &built);
+    let mut bytes = Vec::with_capacity(positions.len() * 4);
+    for value in positions {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 /// Where a new component of this size fits: deck ends first, then the centre

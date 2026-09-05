@@ -1858,3 +1858,24 @@
   color: var(--danger);
   background: transparent;
 }
+
+.check-row {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.check-row label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font:
+    500 10px/1.3 "IBM Plex Sans",
+    sans-serif;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.check-row input {
+  accent-color: var(--fishpaper);
+}
