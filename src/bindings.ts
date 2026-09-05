@@ -33,6 +33,13 @@ export const commands = {
 	exportHolderStl: (plan: PackPlan, cell: CellSpec, toleranceStack: ToleranceLayer[], enclosure: EnclosureSpec, options: HolderOptions, path: string) => typedError<HolderExport, string>(__TAURI_INVOKE("export_holder_stl", { plan: ({...plan,cellSizeMm:plan.cellSizeMm.map(i=>i),cells:plan.cells.map(i=>({...i,position:i.position.map(i=>i)})),groups:plan.groups.map(i=>({...i,center:i.center.map(i=>i)})),seriesPath:plan.seriesPath.map(i=>i.map(i=>i)),blocks:plan.blocks.map(i=>({...i,envelope:({...i.envelope,min:i.envelope.min.map(i=>i),max:i.envelope.max.map(i=>i)})})),serviceVolumes:plan.serviceVolumes.map(i=>({...i,box:({...i.box,min:i.box.min.map(i=>i),max:i.box.max.map(i=>i)})})),bounds:({...plan.bounds,min:plan.bounds.min.map(i=>i),max:plan.bounds.max.map(i=>i)}),metrics:({...plan.metrics,largestFreeBox:({...plan.metrics.largestFreeBox,box:({...plan.metrics.largestFreeBox.box,min:plan.metrics.largestFreeBox.box.min.map(i=>i),max:plan.metrics.largestFreeBox.box.max.map(i=>i)})})})}), cell: ({...cell,bareDiameterMm:cell.bareDiameterMm==null?cell.bareDiameterMm:cell.bareDiameterMm,bareHeightMm:cell.bareHeightMm==null?cell.bareHeightMm:cell.bareHeightMm}), toleranceStack: toleranceStack.map(i=>i), enclosure, options, path })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,pieces:v.data.pieces.map(i=>({...i,sizeMm:i.sizeMm.map(i=>i)}))}) } : v) as typeof v)),
 	/**  Import an STL enclosure and make it available to the planner. */
 	importEnclosure: (path: string) => typedError<HeightMapAsset, string>(__TAURI_INVOKE("import_enclosure", { path })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,depthMap:({...v.data.depthMap,originMm:v.data.depthMap.originMm.map(i=>i)})}) } : v) as typeof v)),
+	/**  Read and validate a project file, recording it as recently used. */
+	loadProject: (path: string) => typedError<ProjectFile, string>(__TAURI_INVOKE("load_project", { path })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,config:({...v.data.config,pack:({...v.data.config.pack,toleranceStack:v.data.config.pack.toleranceStack.map(i=>i),serviceReservations:v.data.config.pack.serviceReservations.map(i=>({...i,sizeMm:i.sizeMm.map(i=>i),offsetMm:i.offsetMm==null?i.offsetMm:i.offsetMm.map(i=>i)}))})}),components:v.data.components.map(i=>({...i,position:i.position.map(i=>i)}))}) } : v) as typeof v)),
+	/**  Write a project file (pretty JSON) and record it as recently used. */
+	saveProject: (path: string, project: ProjectFile) => typedError<null, string>(__TAURI_INVOKE("save_project", { path, project: ({...project,config:({...project.config,pack:({...project.config.pack,toleranceStack:project.config.pack.toleranceStack.map(i=>i),serviceReservations:project.config.pack.serviceReservations.map(i=>({...i,sizeMm:i.sizeMm.map(i=>i),offsetMm:i.offsetMm==null?i.offsetMm:i.offsetMm.map(i=>i)}))})}),components:project.components.map(i=>({...i,position:i.position.map(i=>i)}))}) })),
+	/**  Recently opened projects that still exist on disk, newest first. */
+	recentProjects: () => __TAURI_INVOKE<RecentProject[]>("recent_projects"),
+	forgetProject: (path: string) => typedError<null, string>(__TAURI_INVOKE("forget_project", { path })),
 };
 
 /* Types */
@@ -287,6 +294,19 @@ export type ProfilePiece = {
 	lengthMm: number,
 	/**  Axial center of the cell row this piece belongs to. */
 	axialCenterMm: number,
+};
+
+export type ProjectFile = {
+	schemaVersion: number,
+	config: PlannerConfig,
+	components?: ComponentPlacement[],
+};
+
+export type RecentProject = {
+	path: string,
+	name: string,
+	/**  Unix seconds of the last open or save. */
+	openedAt: number,
 };
 
 export type SeriesGroup = {

@@ -1,5 +1,6 @@
 mod commands;
 mod enclosures;
+mod projects;
 
 use specta_typescript::semantic;
 use tauri_specta::{Builder, collect_commands};
@@ -22,6 +23,10 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::holder_pieces,
             commands::export_holder_stl,
             enclosures::import_enclosure,
+            projects::load_project,
+            projects::save_project,
+            projects::recent_projects,
+            projects::forget_project,
         ])
 }
 
@@ -47,7 +52,6 @@ pub fn run() {
 
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(specta.invoke_handler());
 

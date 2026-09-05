@@ -11,6 +11,7 @@ import type {
   ComponentSpec,
   Dimensions3D,
   EnclosureSpec,
+  ProjectFile,
   PackRequest,
   PlannerConfig,
   ServiceReservation,
@@ -105,6 +106,11 @@ interface PlannerState {
   rightPanel: "variants" | "components";
   showHolders: boolean;
   holderStyle: HolderStyle;
+  /** File the project was opened from or saved to; undefined for an unsaved project. */
+  projectPath?: string;
+  setProjectPath: (path: string | undefined) => void;
+  /** Replace the working project with a validated file; false if it could not be applied. */
+  loadProject: (project: ProjectFile, path: string) => boolean;
   setEnclosureKind: (kind: EnclosureSpec["kind"]) => void;
   setEnclosureAsset: (assetId: string) => void;
   setEnclosureDimension: (key: keyof Dimensions3D, value: number) => void;
@@ -135,6 +141,21 @@ export const usePlannerStore = create<PlannerState>()(
       rightPanel: "variants",
       showHolders: true,
       holderStyle: "full",
+      setProjectPath: (projectPath) => set({ projectPath }),
+      loadProject: (project, projectPath) => {
+        const config = sanitizePersistedConfig(project.config);
+        if (!config) return false;
+        set({
+          config,
+          placements: sanitizePersistedPlacements(project.components) ?? [],
+          projectPath,
+          selectedPlanId: undefined,
+          selectedPlanKey: undefined,
+          selectedComponentId: undefined,
+          rightPanel: "variants",
+        });
+        return true;
+      },
       setEnclosureKind: (kind) =>
         set((state) => {
           if (state.config.enclosure.kind === kind) return state;
@@ -267,6 +288,7 @@ export const usePlannerStore = create<PlannerState>()(
           selectedPlanKey: undefined,
           selectedComponentId: undefined,
           rightPanel: "variants",
+          projectPath: undefined,
         }),
     }),
     {
@@ -288,6 +310,7 @@ export const usePlannerStore = create<PlannerState>()(
           selectedPlanId: unknown;
           selectedPlanKey: unknown;
           holderStyle: unknown;
+          projectPath: unknown;
         }>;
         const config = sanitizePersistedConfig(stored.config);
         const placements = sanitizePersistedPlacements(stored.placements);
@@ -300,6 +323,7 @@ export const usePlannerStore = create<PlannerState>()(
           selectedPlanKey:
             typeof stored.selectedPlanKey === "string" ? stored.selectedPlanKey : undefined,
           holderStyle: stored.holderStyle === "edge" ? "edge" : "full",
+          projectPath: typeof stored.projectPath === "string" ? stored.projectPath : undefined,
         };
       },
       partialize: (state) => ({
@@ -308,6 +332,7 @@ export const usePlannerStore = create<PlannerState>()(
         selectedPlanId: state.selectedPlanId,
         selectedPlanKey: state.selectedPlanKey,
         holderStyle: state.holderStyle,
+        projectPath: state.projectPath,
       }),
     },
   ),

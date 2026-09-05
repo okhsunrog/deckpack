@@ -4,34 +4,18 @@ import { commands } from "./bindings";
 import "./App.css";
 import { ControlPanel } from "./components/ControlPanel";
 import { MetricsBar } from "./components/MetricsBar";
+import { ProjectMenu } from "./components/ProjectMenu";
 import { ResultsPanel } from "./components/ResultsPanel";
 import { useLayoutEngine } from "./components/use-layout-engine";
 import { useWorkspaceEvaluation } from "./components/use-workspace-evaluation";
 import { componentsLibrary, getCell } from "./data/library";
-import { saveFile } from "./platform/save-file";
 import { PlannerScene } from "./scene/PlannerScene";
 import { DEFAULT_HOLDER_OPTIONS } from "./scene/use-holder-pieces";
 import { usePlannerStore } from "./store/planner-store";
 import type { CellSpec, PackPlan } from "./bindings";
 import { planSignature } from "./lib/plan";
+import { projectName } from "./lib/project";
 import { activeServiceReservations } from "./store/service-reservations";
-
-function exportProject() {
-  const state = usePlannerStore.getState();
-  const payload = JSON.stringify(
-    { schemaVersion: 2, config: state.config, components: state.placements },
-    null,
-    2,
-  );
-  void saveFile(payload, {
-    filename: "deckpack-project.json",
-    mimeType: "application/json",
-    filterName: "Deckpack project",
-    extensions: ["json"],
-  }).catch((error: unknown) => {
-    window.alert(`Не удалось сохранить проект: ${(error as Error).message}`);
-  });
-}
 
 async function exportHolder(plan: PackPlan, cell: CellSpec) {
   const state = usePlannerStore.getState();
@@ -77,6 +61,7 @@ function App() {
   const showHolders = usePlannerStore((state) => state.showHolders);
   const setShowHolders = usePlannerStore((state) => state.setShowHolders);
   const holderStyle = usePlannerStore((state) => state.holderStyle);
+  const projectPath = usePlannerStore((state) => state.projectPath);
   const setHolderStyle = usePlannerStore((state) => state.setHolderStyle);
   const cell = getCell(config.pack.cellId);
   const { plans, exploredCount, loading } = useLayoutEngine(config, cell);
@@ -131,7 +116,7 @@ function App() {
           </div>
           <div>
             <h1>DECKPACK</h1>
-            <span>PACKAGING BENCH / V1</span>
+            <span title={projectPath}>{projectName(projectPath) ?? "PACKAGING BENCH / V1"}</span>
           </div>
         </div>
         <div className="project-readout">
@@ -146,6 +131,8 @@ function App() {
           </small>
         </div>
         <div className="header-actions">
+          <ProjectMenu />
+          <span className="header-divider" aria-hidden="true" />
           <button
             type="button"
             disabled={!selectedPlan || selectedPlan.orientation === "z"}
@@ -153,9 +140,6 @@ function App() {
             onClick={() => selectedPlan && void exportHolder(selectedPlan, cell)}
           >
             Холдер STL
-          </button>
-          <button type="button" onClick={exportProject}>
-            Экспорт JSON
           </button>
           <button type="button" className="quiet-button" onClick={resetProject}>
             Сбросить

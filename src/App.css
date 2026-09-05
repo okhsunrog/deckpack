@@ -123,6 +123,35 @@
   background: transparent;
 }
 
+.header-actions .recent-select {
+  max-width: 150px;
+  padding: 0 24px 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font:
+    500 10px/1 "JetBrains Mono",
+    monospace;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%2382949d' stroke-width='1.5'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+
+.header-actions .recent-select option {
+  color: var(--text);
+  background: var(--ink-850);
+}
+
+.header-divider {
+  width: 1px;
+  margin: 4px 4px;
+  background: var(--line-soft);
+}
+
 .workspace-grid {
   display: grid;
   grid-template-columns: 314px minmax(550px, 1fr) 370px;
