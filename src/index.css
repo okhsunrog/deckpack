@@ -26,6 +26,8 @@
   --danger: #ff5b64;
   --success: #73a282;
   font-family: "IBM Plex Sans", sans-serif;
+  /* Native popups (select lists, scrollbars) follow the dark palette. */
+  color-scheme: dark;
   color: var(--text);
   background: var(--ink-950);
   font-synthesis: none;
