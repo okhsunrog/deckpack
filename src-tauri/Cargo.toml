@@ -1,9 +1,9 @@
 [package]
 name = "deckpack"
-version = "0.1.0"
 description = "3D-планировщик батарейного пака и электроники электролонгборда"
-authors = ["okhsunrog"]
-edition = "2024"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -24,17 +24,7 @@ tauri-plugin-dialog = "2.7.3"
 tauri-plugin-fs = "2.5.2"
 tauri-plugin-opener = "2.5.5"
 tauri-plugin-mcp-bridge = "0.13.0" # debug builds only, see lib.rs
-
-# Track the unreleased tauri `dev` branch: it depends on tao 0.37 / wry 0.56,
-# which carry the Wayland decoration fixes (tao #1218: no client-side
-# decorations when the compositor offers server-side ones) that the
-# crates.io 2.11.x releases still lack.
-[patch.crates-io]
-tauri = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
-tauri-build = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
-tauri-codegen = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
-tauri-macros = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
-tauri-plugin = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
-tauri-runtime = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
-tauri-runtime-wry = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
-tauri-utils = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
+deckpack-core = { version = "0.1.0", path = "../crates/deckpack-core" }
+specta = { version = "2.0.0-rc.25", features = ["derive"] }
+tauri-specta = { version = "2.0.0-rc.25", features = ["derive", "typescript"] }
+specta-typescript = "0.0.12"
