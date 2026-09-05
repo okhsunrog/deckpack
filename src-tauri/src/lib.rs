@@ -1,4 +1,5 @@
 mod commands;
+mod enclosures;
 
 use specta_typescript::semantic;
 use tauri_specta::{Builder, collect_commands};
@@ -20,6 +21,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::enumerate_plans,
             commands::holder_pieces,
             commands::export_holder_stl,
+            enclosures::import_enclosure,
         ])
 }
 
@@ -63,6 +65,7 @@ pub fn run() {
     builder
         .setup(move |app| {
             specta.mount_events(app);
+            enclosures::load_imported(app.handle());
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()

@@ -27,6 +27,7 @@ import {
   TextureLoader,
   Vector3,
 } from "three";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { getHeightMapAsset, type MeshHeightMapEnclosureSpec } from "../data/enclosures";
 import type { HolderStyle } from "../bindings";
@@ -590,7 +591,9 @@ function EditableKeepOut({
 
 function MeshEnclosureObject({ enclosure }: { enclosure: MeshHeightMapEnclosureSpec }) {
   const asset = getHeightMapAsset(enclosure);
-  const sourceGeometry = useLoader(STLLoader, asset.modelUrl);
+  // Imported cases live in app data and are served through the asset protocol.
+  const modelUrl = asset.modelPath ? convertFileSrc(asset.modelPath) : asset.modelUrl;
+  const sourceGeometry = useLoader(STLLoader, modelUrl);
   const geometry = useDisposable(
     useMemo(() => {
       const cloned = sourceGeometry.clone();

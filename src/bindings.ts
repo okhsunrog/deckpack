@@ -31,6 +31,8 @@ export const commands = {
 	 *  through the native save dialog).
 	 */
 	exportHolderStl: (plan: PackPlan, cell: CellSpec, toleranceStack: ToleranceLayer[], enclosure: EnclosureSpec, options: HolderOptions, path: string) => typedError<HolderExport, string>(__TAURI_INVOKE("export_holder_stl", { plan: ({...plan,cellSizeMm:plan.cellSizeMm.map(i=>i),cells:plan.cells.map(i=>({...i,position:i.position.map(i=>i)})),groups:plan.groups.map(i=>({...i,center:i.center.map(i=>i)})),seriesPath:plan.seriesPath.map(i=>i.map(i=>i)),blocks:plan.blocks.map(i=>({...i,envelope:({...i.envelope,min:i.envelope.min.map(i=>i),max:i.envelope.max.map(i=>i)})})),serviceVolumes:plan.serviceVolumes.map(i=>({...i,box:({...i.box,min:i.box.min.map(i=>i),max:i.box.max.map(i=>i)})})),bounds:({...plan.bounds,min:plan.bounds.min.map(i=>i),max:plan.bounds.max.map(i=>i)}),metrics:({...plan.metrics,largestFreeBox:({...plan.metrics.largestFreeBox,box:({...plan.metrics.largestFreeBox.box,min:plan.metrics.largestFreeBox.box.min.map(i=>i),max:plan.metrics.largestFreeBox.box.max.map(i=>i)})})})}), cell: ({...cell,bareDiameterMm:cell.bareDiameterMm==null?cell.bareDiameterMm:cell.bareDiameterMm,bareHeightMm:cell.bareHeightMm==null?cell.bareHeightMm:cell.bareHeightMm}), toleranceStack: toleranceStack.map(i=>i), enclosure, options, path })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,pieces:v.data.pieces.map(i=>({...i,sizeMm:i.sizeMm.map(i=>i)}))}) } : v) as typeof v)),
+	/**  Import an STL enclosure and make it available to the planner. */
+	importEnclosure: (path: string) => typedError<HeightMapAsset, string>(__TAURI_INVOKE("import_enclosure", { path })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,depthMap:({...v.data.depthMap,originMm:v.data.depthMap.originMm.map(i=>i)})}) } : v) as typeof v)),
 };
 
 /* Types */
@@ -146,7 +148,13 @@ export type HeightMapAsset = {
 	label: string,
 	kind: HeightMapKind,
 	dimensionsMm: Dimensions3D,
+	/**  URL of the display mesh for bundled assets (served from `public/`). */
 	modelUrl: string,
+	/**
+	 *  Absolute path of the display mesh for assets imported at runtime; the
+	 *  frontend turns it into an asset-protocol URL.
+	 */
+	modelPath?: string | null,
 	meshTriangles: number,
 	depthMap: DepthMap,
 };

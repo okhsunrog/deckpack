@@ -588,7 +588,13 @@ pub struct HeightMapAsset {
     pub label: String,
     pub kind: HeightMapKind,
     pub dimensions_mm: Dimensions3D,
+    /// URL of the display mesh for bundled assets (served from `public/`).
     pub model_url: String,
+    /// Absolute path of the display mesh for assets imported at runtime; the
+    /// frontend turns it into an asset-protocol URL.
+    #[serde(default)]
+    #[specta(optional)]
+    pub model_path: Option<String>,
     pub mesh_triangles: u32,
     pub depth_map: DepthMap,
 }

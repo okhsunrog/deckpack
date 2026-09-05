@@ -388,6 +388,7 @@ pub(crate) mod test_support {
             kind: HeightMapKind::MeshHeightmap,
             dimensions_mm,
             model_url: String::new(),
+            model_path: None,
             mesh_triangles: 0,
             depth_map: DepthMap {
                 origin_mm: origin,

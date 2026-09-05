@@ -1,5 +1,7 @@
 import { cellsLibrary } from "../data/library";
-import { sparkCaseAsset } from "../data/enclosures";
+import { open } from "@tauri-apps/plugin-dialog";
+import { commands } from "../bindings";
+import { addEnclosureAsset, useEnclosureAssets } from "../data/enclosures";
 import { activeServiceReservations, separatedOffsets } from "../store/service-reservations";
 import type {
   Axis,
@@ -28,6 +30,29 @@ const FACE_LABELS: Record<PackFace, string> = {
 
 export function ControlPanel({ config }: { config: PlannerConfig }) {
   const setEnclosureKind = usePlannerStore((state) => state.setEnclosureKind);
+  const setEnclosureAsset = usePlannerStore((state) => state.setEnclosureAsset);
+  const enclosureAssets = useEnclosureAssets();
+  const enclosure = config.enclosure;
+  const selectedAsset =
+    enclosure.kind === "mesh-heightmap"
+      ? enclosureAssets.find((asset) => asset.id === enclosure.assetId)
+      : undefined;
+
+  const importEnclosure = async () => {
+    const path = await open({
+      multiple: false,
+      directory: false,
+      filters: [{ name: "STL model", extensions: ["stl", "STL"] }],
+    });
+    if (!path) return;
+    const result = await commands.importEnclosure(path);
+    if (result.status === "error") {
+      window.alert(`Не удалось импортировать корпус: ${result.error}`);
+      return;
+    }
+    addEnclosureAsset(result.data);
+    setEnclosureAsset(result.data.id);
+  };
   const setEnclosureDimension = usePlannerStore((state) => state.setEnclosureDimension);
   const setPackField = usePlannerStore((state) => state.setPackField);
   const setTolerance = usePlannerStore((state) => state.setTolerance);
@@ -149,16 +174,24 @@ export function ControlPanel({ config }: { config: PlannerConfig }) {
           <span>Форма корпуса</span>
           <select
             aria-label="Форма корпуса"
-            value={config.enclosure.kind}
-            onChange={(event) =>
-              setEnclosureKind(event.currentTarget.value as "box" | "mesh-heightmap")
-            }
+            value={config.enclosure.kind === "box" ? "box" : config.enclosure.assetId}
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              if (value === "box") setEnclosureKind("box");
+              else if (value === "__import__") void importEnclosure();
+              else setEnclosureAsset(value);
+            }}
           >
-            <option value="mesh-heightmap">Spark case · точная STL</option>
+            {enclosureAssets.map((asset) => (
+              <option key={asset.id} value={asset.id}>
+                {asset.label} · STL
+              </option>
+            ))}
             <option value="box">Параллелепипед</option>
+            <option value="__import__">Загрузить STL…</option>
           </select>
         </label>
-        {config.enclosure.kind === "mesh-heightmap" ? (
+        {config.enclosure.kind === "mesh-heightmap" && selectedAsset ? (
           <div className="mesh-enclosure-readout">
             <div className="mesh-enclosure-mark" aria-hidden="true">
               <i />
@@ -166,14 +199,14 @@ export function ControlPanel({ config }: { config: PlannerConfig }) {
               <i />
             </div>
             <div>
-              <strong>{sparkCaseAsset.label}</strong>
+              <strong>{selectedAsset.label}</strong>
               <span>
-                {sparkCaseAsset.dimensionsMm.length.toFixed(1)} ×{" "}
-                {sparkCaseAsset.dimensionsMm.width.toFixed(1)} ×{" "}
-                {sparkCaseAsset.dimensionsMm.height.toFixed(1)} мм
+                {selectedAsset.dimensionsMm.length.toFixed(1)} ×{" "}
+                {selectedAsset.dimensionsMm.width.toFixed(1)} ×{" "}
+                {selectedAsset.dimensionsMm.height.toFixed(1)} мм
               </span>
               <small>
-                {sparkCaseAsset.meshTriangles.toLocaleString("ru-RU")} треугольников · внутренняя
+                {selectedAsset.meshTriangles.toLocaleString("ru-RU")} треугольников · внутренняя
                 поверхность
               </small>
             </div>

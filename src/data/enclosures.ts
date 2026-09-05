@@ -1,49 +1,66 @@
+import { useSyncExternalStore } from "react";
+import { commands, type EnclosureSpec, type HeightMapAsset } from "../bindings";
 import sparkCaseData from "./enclosures/spark-case-heightmap.json";
-import type { Dimensions3D, EnclosureSpec } from "../bindings";
 
 export type MeshHeightMapEnclosureSpec = Extract<EnclosureSpec, { kind: "mesh-heightmap" }>;
 
-export interface HeightMapAsset {
-  id: string;
-  label: string;
-  kind: "mesh-heightmap";
-  dimensionsMm: Dimensions3D;
-  modelUrl: string;
-  meshTriangles: number;
-  depthMap: {
-    originMm: [number, number];
-    stepMm: number;
-    columns: number;
-    rows: number;
-    depthQuantizationMm: number;
-    safetyMarginMm: number;
-    minDepthMm: number;
-    maxDepthMm: number;
-    usableVolumeMm3: number;
-    dataBase64: string;
-  };
+export const SPARK_CASE_ID = "spark-case";
+
+/**
+ * Registry of profiled enclosures: the bundled Spark case plus everything the
+ * user imported from STL. The Rust core keeps the authoritative copy; this
+ * mirror exists so the UI can render synchronously and react to imports.
+ */
+let assets: HeightMapAsset[] = [sparkCaseData as unknown as HeightMapAsset];
+const listeners = new Set<() => void>();
+
+function publish(next: HeightMapAsset[]): void {
+  assets = next;
+  listeners.forEach((listener) => listener());
 }
 
-export const sparkCaseAsset = sparkCaseData as HeightMapAsset;
-export const enclosureAssets = [sparkCaseAsset];
+export function enclosureAssets(): HeightMapAsset[] {
+  return assets;
+}
 
-/** Register an additional asset (used by tests to probe synthetic profiles). */
-export function registerEnclosureAsset(asset: HeightMapAsset): void {
-  if (!enclosureAssets.some((existing) => existing.id === asset.id)) {
-    enclosureAssets.push(asset);
+export function useEnclosureAssets(): HeightMapAsset[] {
+  return useSyncExternalStore((listener) => {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+  }, enclosureAssets);
+}
+
+export function addEnclosureAsset(asset: HeightMapAsset): void {
+  publish([...assets.filter((existing) => existing.id !== asset.id), asset]);
+}
+
+/** Pull the full list (bundled + imported) from the core. Call before rendering. */
+export async function loadEnclosureAssets(): Promise<void> {
+  const fromCore = await commands.enclosureAssets();
+  const merged = [...assets];
+  for (const asset of fromCore) {
+    const index = merged.findIndex((existing) => existing.id === asset.id);
+    if (index >= 0) merged[index] = asset;
+    else merged.push(asset);
   }
+  publish(merged);
 }
 
-export function createSparkCaseEnclosure(): MeshHeightMapEnclosureSpec {
-  return {
-    kind: "mesh-heightmap",
-    assetId: sparkCaseAsset.id,
-    dimensionsMm: { ...sparkCaseAsset.dimensionsMm },
-  };
+export function findHeightMapAsset(id: string): HeightMapAsset | undefined {
+  return assets.find((asset) => asset.id === id);
 }
 
 export function getHeightMapAsset(enclosure: MeshHeightMapEnclosureSpec): HeightMapAsset {
-  const asset = enclosureAssets.find((candidate) => candidate.id === enclosure.assetId);
+  const asset = findHeightMapAsset(enclosure.assetId);
   if (!asset) throw new Error(`Unknown enclosure asset: ${enclosure.assetId}`);
   return asset;
+}
+
+export function createMeshEnclosure(assetId: string): MeshHeightMapEnclosureSpec {
+  const asset = findHeightMapAsset(assetId) ?? assets[0];
+  return { kind: "mesh-heightmap", assetId: asset.id, dimensionsMm: { ...asset.dimensionsMm } };
+}
+
+export function createSparkCaseEnclosure(): MeshHeightMapEnclosureSpec {
+  return createMeshEnclosure(SPARK_CASE_ID);
 }

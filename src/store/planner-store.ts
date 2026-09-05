@@ -4,7 +4,7 @@ import {
   createDefaultServiceReservations,
   setWiringExitMode as updateWiringExitMode,
 } from "./service-reservations";
-import { createSparkCaseEnclosure } from "../data/enclosures";
+import { createMeshEnclosure, createSparkCaseEnclosure } from "../data/enclosures";
 import { sanitizePersistedConfig, sanitizePersistedPlacements } from "./persisted-state";
 import type {
   ComponentPlacement,
@@ -106,6 +106,7 @@ interface PlannerState {
   showHolders: boolean;
   holderStyle: HolderStyle;
   setEnclosureKind: (kind: EnclosureSpec["kind"]) => void;
+  setEnclosureAsset: (assetId: string) => void;
   setEnclosureDimension: (key: keyof Dimensions3D, value: number) => void;
   setPackField: <K extends keyof PackRequest>(key: K, value: PackRequest[K]) => void;
   setTolerance: (id: string, thicknessMm: number) => void;
@@ -148,6 +149,22 @@ export const usePlannerStore = create<PlannerState>()(
                       dimensionsMm: { length: 800, width: 210, height: 34 },
                     },
             },
+            placements: [],
+            selectedPlanId: undefined,
+            selectedPlanKey: undefined,
+            selectedComponentId: undefined,
+          };
+        }),
+      setEnclosureAsset: (assetId) =>
+        set((state) => {
+          if (
+            state.config.enclosure.kind === "mesh-heightmap" &&
+            state.config.enclosure.assetId === assetId
+          ) {
+            return state;
+          }
+          return {
+            config: { ...state.config, enclosure: createMeshEnclosure(assetId) },
             placements: [],
             selectedPlanId: undefined,
             selectedPlanKey: undefined,

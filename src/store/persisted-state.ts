@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { enclosureAssets } from "../data/enclosures";
+import { findHeightMapAsset } from "../data/enclosures";
 import { cellsLibrary } from "../data/library";
 import type { ComponentPlacement, PlannerConfig } from "../bindings";
 
@@ -95,10 +95,7 @@ export function sanitizePersistedConfig(value: unknown): PlannerConfig | undefin
   const config = parsed.data as PlannerConfig;
   if (!cellsLibrary.some((cell) => cell.id === config.pack.cellId)) return undefined;
   const enclosure = config.enclosure;
-  if (
-    enclosure.kind === "mesh-heightmap" &&
-    !enclosureAssets.some((asset) => asset.id === enclosure.assetId)
-  ) {
+  if (enclosure.kind === "mesh-heightmap" && !findHeightMapAsset(enclosure.assetId)) {
     return undefined;
   }
   // Projects stored before the holder-wall layer existed: add it and move the
