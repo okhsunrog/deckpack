@@ -604,23 +604,9 @@ impl Draper<'_> {
     }
 }
 
-/// Scan x positions along the deck and drape the lattice over the exact inner
-/// surface: every bottom-layer cell settles onto its own floor as a cylinder,
-/// and each upper cell rests on its actual neighbours, preserving the
-/// vertical spacing of the lattice pair-wise. Out of all feasible positions
-/// only representatives are kept: tail-most, nose-most, the one closest to
-/// the deck centre, and the deepest.
-fn profile_placements(request: &ProfilePlacementRequest<'_>) -> (Vec<ProfilePlacement>, u32) {
-    let container = request.container;
-    let local_bounds = request.local_bounds;
-    let local_cells = request.local_cells;
-    let axial = request.axial_index;
-    let lateral_index = if axial == 0 { 1 } else { 0 };
-    let tail_x = container.min[0] - local_bounds.min[0];
-    let nose_x = container.max[0] - local_bounds.max[0];
-    if tail_x > nose_x {
-        return (Vec::new(), 0);
-    }
+/// Coarse scan grid along the deck: both extreme offsets, the centred one
+/// when it lies between them, and every `PROFILE_PLACEMENT_STEP_MM` in between.
+fn scan_offsets(tail_x: f64, nose_x: f64) -> Vec<f64> {
     let mut x_offsets = vec![tail_x, nose_x];
     if tail_x < 0.0 && nose_x > 0.0 {
         x_offsets.push(0.0);
@@ -632,26 +618,28 @@ fn profile_placements(request: &ProfilePlacementRequest<'_>) -> (Vec<ProfilePlac
     }
     x_offsets.sort_by(f64::total_cmp);
     x_offsets.dedup();
-    let y_offset = -(local_bounds.min[1] + local_bounds.max[1]) / 2.0;
-    let layer_count = request.cell_layers.iter().copied().max().unwrap_or(0) as usize + 1;
-    let mut by_layer: Vec<Vec<usize>> = vec![Vec::new(); layer_count];
-    for (index, &layer) in request.cell_layers.iter().enumerate() {
-        by_layer[layer as usize].push(index);
-    }
+    x_offsets
+}
 
-    // Support pairs from the undraped lattice: an upper cell keeps at least
-    // its original vertical spacing to every lower neighbour it actually
-    // rests on, i.e. pairs at lattice touch distance, not farther diagonals.
-    let mut supports: Vec<Vec<Support>> = vec![Vec::new(); local_cells.len()];
-    for layer in 1..layer_count {
+/// Support pairs from the undraped lattice: an upper cell keeps at least its
+/// original vertical spacing to every lower neighbour it actually rests on,
+/// i.e. pairs at lattice touch distance, not farther diagonals.
+fn support_pairs(
+    request: &ProfilePlacementRequest<'_>,
+    by_layer: &[Vec<usize>],
+) -> Vec<Vec<Support>> {
+    let cells = request.local_cells;
+    let axial = request.axial_index;
+    let lateral_index = if axial == 0 { 1 } else { 0 };
+    let mut supports: Vec<Vec<Support>> = vec![Vec::new(); cells.len()];
+    for layer in 1..by_layer.len() {
         for &upper in &by_layer[layer] {
             for &lower in &by_layer[layer - 1] {
-                if (local_cells[upper][axial] - local_cells[lower][axial]).abs() > 1.0 {
+                if (cells[upper][axial] - cells[lower][axial]).abs() > 1.0 {
                     continue;
                 }
-                let lateral =
-                    (local_cells[upper][lateral_index] - local_cells[lower][lateral_index]).abs();
-                let rise = local_cells[upper][2] - local_cells[lower][2];
+                let lateral = (cells[upper][lateral_index] - cells[lower][lateral_index]).abs();
+                let rise = cells[upper][2] - cells[lower][2];
                 let touch = jsmath::hypot(&[lateral, rise]);
                 if touch > request.support_distance_mm {
                     continue;
@@ -665,7 +653,123 @@ fn profile_placements(request: &ProfilePlacementRequest<'_>) -> (Vec<ProfilePlac
             }
         }
     }
+    supports
+}
 
+impl Draper<'_> {
+    /// Evaluate `x` only strictly inside the feasible offset range; the ends
+    /// themselves are always part of the coarse grid.
+    fn evaluate_inside(&mut self, x: f64, tail_x: f64, nose_x: f64, feasible: &mut Vec<Candidate>) {
+        if x > tail_x
+            && x < nose_x
+            && let Some(candidate) = self.evaluate(x)
+        {
+            feasible.push(candidate);
+        }
+    }
+
+    /// Feasibility windows narrower than the scan step hide between grid
+    /// points. The overflow landscape can have several local minima (one per
+    /// ramp), so zoom into the best few coarse near-misses, then once more,
+    /// finer, around the single best spot.
+    fn refine_near_misses(&mut self, tail_x: f64, nose_x: f64, feasible: &mut Vec<Candidate>) {
+        let mut seeds = self.near_misses.clone();
+        seeds.sort_by(|a, b| a.1.total_cmp(&b.1));
+        let seeds: Vec<f64> = seeds.iter().take(4).map(|(x, _)| *x).collect();
+        for seed in seeds {
+            let mut x = seed - PROFILE_PLACEMENT_STEP_MM;
+            while x <= seed + PROFILE_PLACEMENT_STEP_MM {
+                self.evaluate_inside(x, tail_x, nose_x, feasible);
+                x += 0.25;
+            }
+        }
+        if feasible.is_empty()
+            && let Some(near_miss_x) = self.near_miss_x
+        {
+            let mut x = near_miss_x - 0.3;
+            while x <= near_miss_x + 0.3 + EPSILON {
+                self.evaluate_inside(x, tail_x, nose_x, feasible);
+                x += 0.03;
+            }
+        }
+    }
+
+    /// Refine around the deepest coarse hit so the pack truly rests on the
+    /// floor instead of stopping at the scan grid resolution.
+    fn refine_deepest(&mut self, tail_x: f64, nose_x: f64, feasible: &mut Vec<Candidate>) {
+        let deepest_x = feasible
+            .iter()
+            .fold(None::<&Candidate>, |best, c| match best {
+                Some(b) if c.rest_mm >= b.rest_mm => Some(b),
+                _ => Some(c),
+            })
+            .expect("refine_deepest needs a feasible candidate")
+            .x;
+        let mut x = deepest_x - PROFILE_PLACEMENT_STEP_MM + 0.5;
+        while x < deepest_x + PROFILE_PLACEMENT_STEP_MM {
+            self.evaluate_inside(x, tail_x, nose_x, feasible);
+            x += 0.5;
+        }
+    }
+}
+
+/// Representative offsets of a sorted feasible set: the deepest, the one
+/// closest to the deck centre, the nose-most and the tail-most. When two
+/// coincide the later label wins, so an extreme that is also the deepest is
+/// reported as tail or nose.
+fn pick_representatives(feasible: &[Candidate]) -> Vec<(f64, PlacementAnchor)> {
+    let center_x = feasible
+        .iter()
+        .min_by(|a, b| a.x.abs().total_cmp(&b.x.abs()))
+        .expect("non-empty")
+        .x;
+    let deepest_x = feasible
+        .iter()
+        .min_by(|a, b| {
+            a.rest_mm
+                .total_cmp(&b.rest_mm)
+                .then(a.x.abs().total_cmp(&b.x.abs()))
+        })
+        .expect("non-empty")
+        .x;
+    let mut representatives: Vec<(f64, PlacementAnchor)> = Vec::new();
+    for (x, anchor) in [
+        (deepest_x, PlacementAnchor::Profile),
+        (center_x, PlacementAnchor::Center),
+        (feasible[feasible.len() - 1].x, PlacementAnchor::Nose),
+        (feasible[0].x, PlacementAnchor::Tail),
+    ] {
+        match representatives.iter_mut().find(|(key, _)| *key == x) {
+            Some(entry) => entry.1 = anchor,
+            None => representatives.push((x, anchor)),
+        }
+    }
+    representatives.sort_by(|a, b| a.0.total_cmp(&b.0));
+    representatives
+}
+
+/// Scan x positions along the deck and drape the lattice over the exact inner
+/// surface: every bottom-layer cell settles onto its own floor as a cylinder,
+/// and each upper cell rests on its actual neighbours, preserving the
+/// vertical spacing of the lattice pair-wise. Out of all feasible positions
+/// only representatives are kept: tail-most, nose-most, the one closest to
+/// the deck centre, and the deepest.
+fn profile_placements(request: &ProfilePlacementRequest<'_>) -> (Vec<ProfilePlacement>, u32) {
+    let container = request.container;
+    let local_bounds = request.local_bounds;
+    let tail_x = container.min[0] - local_bounds.min[0];
+    let nose_x = container.max[0] - local_bounds.max[0];
+    if tail_x > nose_x {
+        return (Vec::new(), 0);
+    }
+    let x_offsets = scan_offsets(tail_x, nose_x);
+    let y_offset = -(local_bounds.min[1] + local_bounds.max[1]) / 2.0;
+    let layer_count = request.cell_layers.iter().copied().max().unwrap_or(0) as usize + 1;
+    let mut by_layer: Vec<Vec<usize>> = vec![Vec::new(); layer_count];
+    for (index, &layer) in request.cell_layers.iter().enumerate() {
+        by_layer[layer as usize].push(index);
+    }
+    let supports = support_pairs(request, &by_layer);
     let top_limit_z = heightmap::cylinder_top_limit_z(
         request.enclosure,
         &ProfileCylinder {
@@ -696,96 +800,16 @@ fn profile_placements(request: &ProfilePlacementRequest<'_>) -> (Vec<ProfilePlac
             feasible.push(candidate);
         }
     }
-    // Windows narrower than the scan step hide between grid points: the
-    // overflow landscape can have several local minima (one per ramp), so
-    // zoom into the best few coarse near-misses, then once more around the
-    // best refined spot.
     if feasible.is_empty() && !draper.near_misses.is_empty() {
-        let mut seeds = draper.near_misses.clone();
-        seeds.sort_by(|a, b| a.1.total_cmp(&b.1));
-        let seeds: Vec<f64> = seeds.iter().take(4).map(|(x, _)| *x).collect();
-        for seed in seeds {
-            let mut x = seed - PROFILE_PLACEMENT_STEP_MM;
-            while x <= seed + PROFILE_PLACEMENT_STEP_MM {
-                if x > tail_x
-                    && x < nose_x
-                    && let Some(candidate) = draper.evaluate(x)
-                {
-                    feasible.push(candidate);
-                }
-                x += 0.25;
-            }
-        }
-        if feasible.is_empty()
-            && let Some(near_miss_x) = draper.near_miss_x
-        {
-            let mut x = near_miss_x - 0.3;
-            while x <= near_miss_x + 0.3 + EPSILON {
-                if x > tail_x
-                    && x < nose_x
-                    && let Some(candidate) = draper.evaluate(x)
-                {
-                    feasible.push(candidate);
-                }
-                x += 0.03;
-            }
-        }
+        draper.refine_near_misses(tail_x, nose_x, &mut feasible);
     }
     if feasible.is_empty() {
         return (Vec::new(), scanned_count);
     }
-
-    // Refine around the deepest coarse hit so the pack truly rests on the
-    // floor instead of stopping at the scan grid resolution.
-    let coarse_deepest_x = feasible
-        .iter()
-        .fold(None::<&Candidate>, |best, c| match best {
-            Some(b) if c.rest_mm >= b.rest_mm => Some(b),
-            _ => Some(c),
-        })
-        .unwrap()
-        .x;
-    let mut x = coarse_deepest_x - PROFILE_PLACEMENT_STEP_MM + 0.5;
-    while x < coarse_deepest_x + PROFILE_PLACEMENT_STEP_MM {
-        if x > tail_x
-            && x < nose_x
-            && let Some(candidate) = draper.evaluate(x)
-        {
-            feasible.push(candidate);
-        }
-        x += 0.5;
-    }
+    draper.refine_deepest(tail_x, nose_x, &mut feasible);
     feasible.sort_by(|a, b| a.x.total_cmp(&b.x));
 
-    let center_x = {
-        let mut by_distance: Vec<&Candidate> = feasible.iter().collect();
-        by_distance.sort_by(|a, b| a.x.abs().total_cmp(&b.x.abs()));
-        by_distance[0].x
-    };
-    let deepest_x = {
-        let mut by_depth: Vec<&Candidate> = feasible.iter().collect();
-        by_depth.sort_by(|a, b| {
-            a.rest_mm
-                .total_cmp(&b.rest_mm)
-                .then(a.x.abs().total_cmp(&b.x.abs()))
-        });
-        by_depth[0].x
-    };
-    // Insertion-ordered map: a later anchor overrides the label of the same x.
-    let mut representatives: Vec<(f64, PlacementAnchor)> = Vec::new();
-    for (x, anchor) in [
-        (deepest_x, PlacementAnchor::Profile),
-        (center_x, PlacementAnchor::Center),
-        (feasible[feasible.len() - 1].x, PlacementAnchor::Nose),
-        (feasible[0].x, PlacementAnchor::Tail),
-    ] {
-        match representatives.iter_mut().find(|(key, _)| *key == x) {
-            Some(entry) => entry.1 = anchor,
-            None => representatives.push((x, anchor)),
-        }
-    }
-    representatives.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let placements = representatives
+    let placements = pick_representatives(&feasible)
         .into_iter()
         .map(|(x, anchor)| {
             let candidate = feasible.iter().find(|item| item.x == x).unwrap();
@@ -942,6 +966,32 @@ fn normalized(value: f64, (min, max): (f64, f64)) -> f64 {
     }
 }
 
+/// Relative weight of every ranking criterion; they sum to 1.
+struct RankWeights {
+    /// Centre of mass close to the requested x.
+    center: f64,
+    /// Short S-chain.
+    chain: f64,
+    /// Clearance to the enclosure walls and lid.
+    clearance: f64,
+    /// Largest free box left for components.
+    free: f64,
+    /// Small envelope.
+    compact: f64,
+    /// Manufacturability (brick lattice, few layers).
+    manufacturing: f64,
+}
+
+const RANK_WEIGHTS: RankWeights = RankWeights {
+    center: 0.22,
+    chain: 0.18,
+    clearance: 0.15,
+    free: 0.15,
+    compact: 0.15,
+    manufacturing: 0.15,
+};
+
+/// Score every plan 0..100 relative to the others and sort best first.
 fn rank_plans(mut plans: Vec<PackPlan>) -> Vec<PackPlan> {
     if plans.is_empty() {
         return plans;
@@ -951,6 +1001,7 @@ fn rank_plans(mut plans: Vec<PackPlan>) -> Vec<PackPlan> {
     let clearance_range = range(plans.iter().map(|p| p.metrics.min_clearance_mm));
     let free_range = range(plans.iter().map(|p| p.metrics.largest_free_box.volume_mm3));
     let envelope_range = range(plans.iter().map(|p| box_volume(&p.bounds)));
+    let w = &RANK_WEIGHTS;
     for plan in &mut plans {
         let center = normalized_inverse(plan.metrics.center_offset_mm, center_range);
         let chain = normalized_inverse(plan.metrics.series_chain_length_mm, chain_range);
@@ -959,12 +1010,12 @@ fn rank_plans(mut plans: Vec<PackPlan>) -> Vec<PackPlan> {
         let compact = normalized_inverse(box_volume(&plan.bounds), envelope_range);
         let manufacturing = plan.metrics.manufacturability / 100.0;
         plan.metrics.score = jsmath::round(
-            (center * 0.22
-                + chain * 0.18
-                + clearance * 0.15
-                + free * 0.15
-                + compact * 0.15
-                + manufacturing * 0.15)
+            (center * w.center
+                + chain * w.chain
+                + clearance * w.clearance
+                + free * w.free
+                + compact * w.compact
+                + manufacturing * w.manufacturing)
                 * 100.0,
         );
     }
@@ -1080,16 +1131,48 @@ pub fn enumerate_pack_plans(
     })
 }
 
-fn run_task(context: &Context<'_>, task: Task) -> (Vec<PackPlan>, u32) {
-    let Context {
-        config,
-        cell,
-        container,
-        enclosure_volume,
-        tolerance,
-    } = context;
-    let enclosure = &config.enclosure;
-    let pack = &config.pack;
+/// A lattice shape in local coordinates, before placement: cell centres with
+/// their lattice layer, the groups routed into one S-chain, and the sizes
+/// every containment check works with.
+struct Lattice {
+    actual_cell_size: Vec3,
+    /// Sleeved cell plus radial / axial tolerance layers.
+    reservation_cell_size: Vec3,
+    axial: usize,
+    /// One of the two radial axes; both share the reservation diameter.
+    radial_index: usize,
+    groups: Vec<LocalGroup>,
+    /// Index of the first cell of every group in `cells`.
+    group_starts: Vec<usize>,
+    cells: Vec<Vec3>,
+    cell_layers: Vec<u32>,
+    layer_count: u32,
+    /// Group indices in S-chain order.
+    routed: Vec<usize>,
+    /// Centre distance up to which two cells of adjacent layers support each other.
+    support_distance_mm: f64,
+}
+
+impl Lattice {
+    /// Cells of one group.
+    fn group_cells<'a, T>(&self, group_index: usize, items: &'a [T]) -> &'a [T] {
+        let start = self.group_starts[group_index];
+        &items[start..start + self.groups[group_index].cell_positions.len()]
+    }
+
+    fn separated(&self, cells: &[Vec3]) -> bool {
+        cells_physically_separated(
+            cells,
+            self.axial,
+            self.reservation_cell_size[self.radial_index],
+            self.reservation_cell_size[self.axial],
+        )
+    }
+}
+
+/// Build the local lattice of a task, or `None` when the task is degenerate
+/// (a single-row stagger), exceeds the layer limit or overlaps itself.
+fn build_lattice(context: &Context<'_>, task: Task) -> Option<Lattice> {
     let Task {
         orientation,
         mode,
@@ -1097,6 +1180,8 @@ fn run_task(context: &Context<'_>, task: Task) -> (Vec<PackPlan>, u32) {
         parallel_factors: p_factors,
         series_factors: s_factors,
     } = task;
+    let tolerance = &context.tolerance;
+    let cell = context.cell;
     let axial = orientation.index();
     let radial_axes: Vec<usize> = (0..3).filter(|axis| *axis != axial).collect();
     let actual_cell_size = cell_size_for_orientation(
@@ -1122,7 +1207,7 @@ fn run_task(context: &Context<'_>, task: Task) -> (Vec<PackPlan>, u32) {
     // skip it so brick geometry is not duplicated with a "custom holder"
     // label and a worse manufacturability score.
     if mode == PackingMode::Staggered && !stagger_in_group && !stagger_across_groups {
-        return (Vec::new(), 0);
+        return None;
     }
     let cross_stagger = if stagger_across_groups {
         let (row, shift) = (row_axis.unwrap(), shift_axis.unwrap());
@@ -1138,29 +1223,31 @@ fn run_task(context: &Context<'_>, task: Task) -> (Vec<PackPlan>, u32) {
     } else {
         None
     };
-    let local_groups = create_local_groups(
+    let groups = create_local_groups(
         s_factors,
         &template,
         tolerance.between_groups,
         cross_stagger,
     );
-    let all_local_cells: Vec<Vec3> = local_groups
-        .iter()
-        .flat_map(|g| g.cell_positions.iter().copied())
-        .collect();
+    let mut group_starts = Vec::with_capacity(groups.len());
+    let mut cells: Vec<Vec3> = Vec::new();
+    for group in &groups {
+        group_starts.push(cells.len());
+        cells.extend_from_slice(&group.cell_positions);
+    }
     // Lattice layers are identified from the undraped local z values; the
     // settled heights may differ per cell once draped over terrain.
-    let mut distinct_local_z: Vec<f64> = all_local_cells
+    let mut distinct_local_z: Vec<f64> = cells
         .iter()
         .map(|p| jsmath::round(p[2] * 100.0) / 100.0)
         .collect();
     distinct_local_z.sort_by(f64::total_cmp);
     distinct_local_z.dedup();
-    let lattice_layer_count = distinct_local_z.len() as u32;
-    if lattice_layer_count > pack.max_layers {
-        return (Vec::new(), 0);
+    let layer_count = distinct_local_z.len() as u32;
+    if layer_count > context.config.pack.max_layers {
+        return None;
     }
-    let cell_layers: Vec<u32> = all_local_cells
+    let cell_layers: Vec<u32> = cells
         .iter()
         .map(|p| {
             distinct_local_z
@@ -1170,269 +1257,304 @@ fn run_task(context: &Context<'_>, task: Task) -> (Vec<PackPlan>, u32) {
         })
         .collect();
 
-    let reservation_cell_size = template.reservation_cell_size;
     let radial_index = if axial == 0 { 1 } else { 0 };
-    if !cells_physically_separated(
-        &all_local_cells,
+    let routed = route_groups(&groups, s_factors);
+    let lattice = Lattice {
+        actual_cell_size,
+        reservation_cell_size: template.reservation_cell_size,
         axial,
-        reservation_cell_size[radial_index],
-        reservation_cell_size[axial],
-    ) {
-        return (Vec::new(), 0);
-    }
-    let routed = route_groups(&local_groups, s_factors);
-    let cell_boxes: Vec<Box3D> = all_local_cells
+        radial_index,
+        groups,
+        group_starts,
+        cells,
+        cell_layers,
+        layer_count,
+        routed,
+        support_distance_mm: template.cell_pitch[radial_index]
+            .max(template.reservation_size[2] + tolerance.between_groups)
+            + 0.6,
+    };
+    lattice.separated(&lattice.cells).then_some(lattice)
+}
+
+/// The pack block (cell reservations plus outer wrap) with the service
+/// volumes attached to its faces, and the union of both.
+struct Envelope {
+    block: Box3D,
+    services: Vec<ServiceVolume>,
+    bounds: Box3D,
+}
+
+fn envelope_of(
+    cells: &[Vec3],
+    lattice: &Lattice,
+    outer_wrap: f64,
+    reservations: &[&ServiceReservation],
+) -> Envelope {
+    let cell_boxes: Vec<Box3D> = cells
         .iter()
-        .map(|p| box_from_center_size(*p, reservation_cell_size))
+        .map(|p| box_from_center_size(*p, lattice.reservation_cell_size))
         .collect();
-    let wrap = [tolerance.outer_wrap; 3];
-    let block_envelope = expand_box(&union_boxes(&cell_boxes), wrap);
-    let active_reservations: Vec<&ServiceReservation> = active_service_reservations(pack)
-        .filter(|reservation| reservation.enabled)
-        .collect();
-    let local_service_volumes: Vec<ServiceVolume> = active_reservations
+    let block = expand_box(&union_boxes(&cell_boxes), [outer_wrap; 3]);
+    let services: Vec<ServiceVolume> = reservations
         .iter()
         .map(|reservation| ServiceVolume {
             id: reservation.id.clone(),
             label: reservation.label.clone(),
             kind: reservation.kind,
-            box_: service_box_for_envelope(reservation, &block_envelope),
+            box_: service_box_for_envelope(reservation, &block),
         })
         .collect();
-    let local_bounds = union_boxes(
-        &std::iter::once(block_envelope)
-            .chain(local_service_volumes.iter().map(|v| v.box_))
+    let bounds = union_boxes(
+        &std::iter::once(block)
+            .chain(services.iter().map(|v| v.box_))
             .collect::<Vec<_>>(),
     );
-    let required_size = box_size(&local_bounds);
-    let enclosure_size = geometry::dimensions_to_vec3(enclosure.dimensions_mm());
-    if (0..3).any(|axis| required_size[axis] > enclosure_size[axis] + 1e-6) {
-        return (Vec::new(), 0);
+    Envelope {
+        block,
+        services,
+        bounds,
     }
+}
 
-    let mut explored = 0;
-    let placements: Vec<ProfilePlacement> = match enclosure.as_height_map() {
+/// Where the lattice can go: three anchors in a box, or the representative
+/// draped positions in a profiled case. Returns the placements and how many
+/// positions were examined.
+fn candidate_placements(
+    context: &Context<'_>,
+    lattice: &Lattice,
+    local_bounds: &Box3D,
+    rigid: bool,
+) -> (Vec<ProfilePlacement>, u32) {
+    let tolerance = &context.tolerance;
+    match context.config.enclosure.as_height_map() {
         None => {
-            explored += ANCHORS.len() as u32;
-            ANCHORS
+            let placements = ANCHORS
                 .iter()
                 .map(|&anchor| {
-                    let mut offset = anchor_offset(&local_bounds, container, anchor);
+                    let mut offset = anchor_offset(local_bounds, &context.container, anchor);
                     offset[2] += tolerance.floor;
                     ProfilePlacement {
                         anchor,
                         x_offset: offset[0],
                         y_offset: offset[1],
-                        cell_z: all_local_cells.iter().map(|p| p[2] + offset[2]).collect(),
-                        cell_dx: vec![0.0; all_local_cells.len()],
+                        cell_z: lattice.cells.iter().map(|p| p[2] + offset[2]).collect(),
+                        cell_dx: vec![0.0; lattice.cells.len()],
                     }
                 })
-                .collect()
+                .collect();
+            (placements, ANCHORS.len() as u32)
         }
         Some(height_map) => {
-            let (placements, scanned) = profile_placements(&ProfilePlacementRequest {
+            let radius = lattice.reservation_cell_size[lattice.radial_index] / 2.0;
+            let half_length = lattice.reservation_cell_size[lattice.axial] / 2.0;
+            profile_placements(&ProfilePlacementRequest {
                 enclosure: height_map,
-                container,
-                local_bounds: &local_bounds,
-                local_cells: &all_local_cells,
-                cell_layers: &cell_layers,
-                axial_index: axial,
-                orientation,
-                cylinder_radius_mm: reservation_cell_size[radial_index] / 2.0
-                    + tolerance.outer_wrap,
-                cylinder_half_length_mm: reservation_cell_size[axial] / 2.0 + tolerance.outer_wrap,
-                support_distance_mm: template.cell_pitch[radial_index]
-                    .max(template.reservation_size[2] + tolerance.between_groups)
-                    + 0.6,
-                rigid: mode == PackingMode::Brick,
+                container: &context.container,
+                local_bounds,
+                local_cells: &lattice.cells,
+                cell_layers: &lattice.cell_layers,
+                axial_index: lattice.axial,
+                orientation: Axis::ALL[lattice.axial],
+                cylinder_radius_mm: radius + tolerance.outer_wrap,
+                cylinder_half_length_mm: half_length + tolerance.outer_wrap,
+                support_distance_mm: lattice.support_distance_mm,
+                rigid,
                 floor_mm: tolerance.floor,
-            });
-            explored += scanned;
-            placements
+            })
         }
+    }
+}
+
+/// Turn one placement of the lattice into a plan, or `None` when the placed
+/// pack does not fit the enclosure after all.
+fn assemble_plan(
+    context: &Context<'_>,
+    task: Task,
+    lattice: &Lattice,
+    reservations: &[&ServiceReservation],
+    placement: &ProfilePlacement,
+) -> Option<PackPlan> {
+    let enclosure = &context.config.enclosure;
+    let pack = &context.config.pack;
+    let final_positions: Vec<Vec3> = lattice
+        .cells
+        .iter()
+        .enumerate()
+        .map(|(index, p)| {
+            [
+                p[0] + placement.x_offset + placement.cell_dx[index],
+                p[1] + placement.y_offset,
+                placement.cell_z[index],
+            ]
+        })
+        .collect();
+    // Draping preserves lattice spacing pair-wise; this guards the
+    // invariant against future regressions.
+    if !lattice.separated(&final_positions) {
+        return None;
+    }
+    let envelope = envelope_of(
+        &final_positions,
+        lattice,
+        context.tolerance.outer_wrap,
+        reservations,
+    );
+    // For a box every bound is checked at once; for the profiled case the
+    // cells passed the exact cylinder check while draping, so only the
+    // attached service volumes remain to verify.
+    let fits = match enclosure.as_height_map() {
+        None => geometry::enclosure_contains(enclosure, &envelope.bounds),
+        Some(_) => envelope
+            .services
+            .iter()
+            .all(|v| geometry::enclosure_contains(enclosure, &v.box_)),
     };
-
-    let mut group_starts = Vec::with_capacity(local_groups.len());
-    let mut cursor = 0;
-    for group in &local_groups {
-        group_starts.push(cursor);
-        cursor += group.cell_positions.len();
+    if !fits {
+        return None;
     }
 
-    let mut plans = Vec::new();
-    for placement in placements {
-        let final_positions: Vec<Vec3> = all_local_cells
-            .iter()
-            .enumerate()
-            .map(|(index, p)| {
-                [
-                    p[0] + placement.x_offset + placement.cell_dx[index],
-                    p[1] + placement.y_offset,
-                    placement.cell_z[index],
-                ]
-            })
-            .collect();
-        // Draping preserves lattice spacing pair-wise; this guards the
-        // invariant against future regressions.
-        if !cells_physically_separated(
-            &final_positions,
-            axial,
-            reservation_cell_size[radial_index],
-            reservation_cell_size[axial],
-        ) {
-            continue;
-        }
-        let translated_block = expand_box(
-            &union_boxes(
-                &final_positions
-                    .iter()
-                    .map(|p| box_from_center_size(*p, reservation_cell_size))
-                    .collect::<Vec<_>>(),
-            ),
-            wrap,
-        );
-        let translated_services: Vec<ServiceVolume> = local_service_volumes
-            .iter()
-            .zip(&active_reservations)
-            .map(|(volume, reservation)| ServiceVolume {
-                box_: service_box_for_envelope(reservation, &translated_block),
-                ..volume.clone()
-            })
-            .collect();
-        let bounds = union_boxes(
-            &std::iter::once(translated_block)
-                .chain(translated_services.iter().map(|v| v.box_))
-                .collect::<Vec<_>>(),
-        );
-        // For a box every bound is checked at once; for the profiled case the
-        // cells passed the exact cylinder check while draping, so only the
-        // attached service volumes remain to verify.
-        let fits = match enclosure.as_height_map() {
-            None => geometry::enclosure_contains(enclosure, &bounds),
-            Some(_) => translated_services
-                .iter()
-                .all(|v| geometry::enclosure_contains(enclosure, &v.box_)),
-        };
-        if !fits {
-            continue;
-        }
-
-        let group_centers: Vec<Vec3> = local_groups
-            .iter()
-            .enumerate()
-            .map(|(group_index, group)| {
-                let start = group_starts[group_index];
-                let count = group.cell_positions.len();
-                let sum = final_positions[start..start + count]
-                    .iter()
-                    .fold([0.0; 3], |sum, p| {
-                        [sum[0] + p[0], sum[1] + p[1], sum[2] + p[2]]
-                    });
-                sum.map(|value| value / count as f64)
-            })
-            .collect();
-        let ordered_groups: Vec<SeriesGroup> = routed
-            .iter()
-            .enumerate()
-            .map(|(series_index, &group_index)| {
-                let group = &local_groups[group_index];
-                SeriesGroup {
-                    id: group.id.clone(),
-                    series_index: series_index as u32,
-                    grid: group.grid,
-                    center: group_centers[group_index],
-                    cell_ids: (0..group.cell_positions.len())
-                        .map(|c| format!("{}-c{c}", group.id))
-                        .collect(),
-                }
-            })
-            .collect();
-        let series_index_of = |group_id: &str| {
-            ordered_groups
-                .iter()
-                .find(|g| g.id == group_id)
-                .unwrap()
-                .series_index
-        };
-        let (cell_layers, final_positions) = (&cell_layers, &final_positions);
-        let cells: Vec<CellPlacement> = local_groups
-            .iter()
-            .enumerate()
-            .flat_map(|(group_index, group)| {
-                let start = group_starts[group_index];
-                let series_index = series_index_of(&group.id);
-                (0..group.cell_positions.len()).map(move |cell_index| CellPlacement {
-                    id: format!("{}-c{cell_index}", group.id),
-                    group_id: group.id.clone(),
-                    series_index,
-                    layer: cell_layers[start + cell_index],
-                    position: final_positions[start + cell_index],
-                })
-            })
-            .collect();
-        let series_path: Vec<Vec3> = ordered_groups.iter().map(|g| g.center).collect();
-        let center_of_mass_x_mm =
-            cells.iter().map(|c| c.position[0]).sum::<f64>() / cells.len() as f64;
-        let series_chain_length_mm = series_path
-            .windows(2)
-            .fold(0.0, |sum, pair| sum + distance(pair[0], pair[1]));
-        let obstacles: Vec<Box3D> = std::iter::once(translated_block)
-            .chain(translated_services.iter().map(|v| v.box_))
-            .collect();
-        let reservation_volume_mm3 = obstacles.iter().fold(0.0, |sum, b| sum + box_volume(b));
-        let profiled = enclosure.as_height_map().is_some();
-        let length = enclosure.dimensions_mm().length;
-        let metrics = LayoutMetrics {
-            score: 0.0,
-            center_of_mass_x_mm,
-            center_of_mass_percent: ((center_of_mass_x_mm + length / 2.0) / length) * 100.0,
-            center_offset_mm: (center_of_mass_x_mm - pack.target_center_of_mass_x_mm).abs(),
-            series_chain_length_mm,
-            min_clearance_mm: if profiled {
-                profile_clearance(container, &bounds)
-            } else {
-                geometry::enclosure_clearance(enclosure, &bounds)
-            },
-            layer_count: lattice_layer_count,
-            reservation_volume_mm3,
-            utilization_percent: (reservation_volume_mm3 / enclosure_volume) * 100.0,
-            largest_free_box: if profiled {
-                empty_free_box()
-            } else {
-                largest_empty_axis_aligned_box(container, &obstacles)
-            },
-            manufacturability: (100.0
-                - if mode == PackingMode::Staggered {
-                    25.0
-                } else {
-                    0.0
-                }
-                - (lattice_layer_count as f64 - 1.0) * 8.0)
-                .max(0.0),
-        };
-        plans.push(PackPlan {
-            id: String::new(),
-            packing_mode: mode,
-            orientation,
-            stagger_row_axis,
-            parallel_factors: p_factors,
-            series_factors: s_factors,
-            anchor: placement.anchor,
-            cell_size_mm: actual_cell_size,
-            series_order: ordered_groups.iter().map(|g| g.id.clone()).collect(),
-            blocks: vec![PackBlock {
-                id: "block-0".into(),
-                group_ids: ordered_groups.iter().map(|g| g.id.clone()).collect(),
-                envelope: translated_block,
-            }],
-            cells,
-            groups: ordered_groups,
-            series_path,
-            service_volumes: translated_services,
-            bounds,
-            metrics,
-        });
+    let group_centers: Vec<Vec3> = (0..lattice.groups.len())
+        .map(|group_index| {
+            let positions = lattice.group_cells(group_index, &final_positions);
+            let sum = positions.iter().fold([0.0; 3], |sum, p| {
+                [sum[0] + p[0], sum[1] + p[1], sum[2] + p[2]]
+            });
+            sum.map(|value| value / positions.len() as f64)
+        })
+        .collect();
+    let ordered_groups: Vec<SeriesGroup> = lattice
+        .routed
+        .iter()
+        .enumerate()
+        .map(|(series_index, &group_index)| {
+            let group = &lattice.groups[group_index];
+            SeriesGroup {
+                id: group.id.clone(),
+                series_index: series_index as u32,
+                grid: group.grid,
+                center: group_centers[group_index],
+                cell_ids: (0..group.cell_positions.len())
+                    .map(|c| format!("{}-c{c}", group.id))
+                    .collect(),
+            }
+        })
+        .collect();
+    let mut series_index_of = vec![0u32; lattice.groups.len()];
+    for (series_index, &group_index) in lattice.routed.iter().enumerate() {
+        series_index_of[group_index] = series_index as u32;
     }
+    let cells: Vec<CellPlacement> = lattice
+        .groups
+        .iter()
+        .enumerate()
+        .flat_map(|(group_index, group)| {
+            let layers = lattice.group_cells(group_index, &lattice.cell_layers);
+            let positions = lattice.group_cells(group_index, &final_positions);
+            let series_index = series_index_of[group_index];
+            (0..group.cell_positions.len()).map(move |cell_index| CellPlacement {
+                id: format!("{}-c{cell_index}", group.id),
+                group_id: group.id.clone(),
+                series_index,
+                layer: layers[cell_index],
+                position: positions[cell_index],
+            })
+        })
+        .collect();
+    let series_path: Vec<Vec3> = ordered_groups.iter().map(|g| g.center).collect();
+    let center_of_mass_x_mm = cells.iter().map(|c| c.position[0]).sum::<f64>() / cells.len() as f64;
+    let series_chain_length_mm = series_path
+        .windows(2)
+        .fold(0.0, |sum, pair| sum + distance(pair[0], pair[1]));
+    let obstacles: Vec<Box3D> = std::iter::once(envelope.block)
+        .chain(envelope.services.iter().map(|v| v.box_))
+        .collect();
+    let reservation_volume_mm3 = obstacles.iter().fold(0.0, |sum, b| sum + box_volume(b));
+    let profiled = enclosure.as_height_map().is_some();
+    let length = enclosure.dimensions_mm().length;
+    let metrics = LayoutMetrics {
+        score: 0.0,
+        center_of_mass_x_mm,
+        center_of_mass_percent: ((center_of_mass_x_mm + length / 2.0) / length) * 100.0,
+        center_offset_mm: (center_of_mass_x_mm - pack.target_center_of_mass_x_mm).abs(),
+        series_chain_length_mm,
+        min_clearance_mm: if profiled {
+            profile_clearance(&context.container, &envelope.bounds)
+        } else {
+            geometry::enclosure_clearance(enclosure, &envelope.bounds)
+        },
+        layer_count: lattice.layer_count,
+        reservation_volume_mm3,
+        utilization_percent: (reservation_volume_mm3 / context.enclosure_volume) * 100.0,
+        largest_free_box: if profiled {
+            empty_free_box()
+        } else {
+            largest_empty_axis_aligned_box(&context.container, &obstacles)
+        },
+        manufacturability: manufacturability(task.mode, lattice.layer_count),
+    };
+    Some(PackPlan {
+        id: String::new(),
+        packing_mode: task.mode,
+        orientation: task.orientation,
+        stagger_row_axis: task.stagger_row_axis,
+        parallel_factors: task.parallel_factors,
+        series_factors: task.series_factors,
+        anchor: placement.anchor,
+        cell_size_mm: lattice.actual_cell_size,
+        series_order: ordered_groups.iter().map(|g| g.id.clone()).collect(),
+        blocks: vec![PackBlock {
+            id: "block-0".into(),
+            group_ids: ordered_groups.iter().map(|g| g.id.clone()).collect(),
+            envelope: envelope.block,
+        }],
+        cells,
+        groups: ordered_groups,
+        series_path,
+        service_volumes: envelope.services,
+        bounds: envelope.bounds,
+        metrics,
+    })
+}
+
+/// 0..100: a brick lattice on one layer scores 100; a custom (staggered)
+/// holder costs 25 and every extra layer 8.
+fn manufacturability(mode: PackingMode, layer_count: u32) -> f64 {
+    let stagger_penalty = if mode == PackingMode::Staggered {
+        25.0
+    } else {
+        0.0
+    };
+    (100.0 - stagger_penalty - (layer_count as f64 - 1.0) * 8.0).max(0.0)
+}
+
+fn run_task(context: &Context<'_>, task: Task) -> (Vec<PackPlan>, u32) {
+    let Some(lattice) = build_lattice(context, task) else {
+        return (Vec::new(), 0);
+    };
+    let pack = &context.config.pack;
+    let reservations: Vec<&ServiceReservation> = active_service_reservations(pack)
+        .filter(|reservation| reservation.enabled)
+        .collect();
+    let local = envelope_of(
+        &lattice.cells,
+        &lattice,
+        context.tolerance.outer_wrap,
+        &reservations,
+    );
+    let required_size = box_size(&local.bounds);
+    let enclosure_size = geometry::dimensions_to_vec3(context.config.enclosure.dimensions_mm());
+    if (0..3).any(|axis| required_size[axis] > enclosure_size[axis] + 1e-6) {
+        return (Vec::new(), 0);
+    }
+    // Brick packs stack cells vertically, so a column riding a ramp would
+    // push its whole tower up; only staggered lattices drape per column.
+    let rigid = task.mode == PackingMode::Brick;
+    let (placements, explored) = candidate_placements(context, &lattice, &local.bounds, rigid);
+    let plans = placements
+        .iter()
+        .filter_map(|placement| assemble_plan(context, task, &lattice, &reservations, placement))
+        .collect();
     (plans, explored)
 }
 
