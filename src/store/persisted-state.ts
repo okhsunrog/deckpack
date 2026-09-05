@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { enclosureAssets } from "../data/enclosures";
 import { cellsLibrary } from "../data/library";
-import type { ComponentPlacement, PlannerConfig } from "../domain/types";
+import type { ComponentPlacement, PlannerConfig } from "../bindings";
 
 const vec3Schema = z.tuple([z.number(), z.number(), z.number()]);
 

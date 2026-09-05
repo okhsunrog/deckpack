@@ -8,13 +8,13 @@ import { ResultsPanel } from "./components/ResultsPanel";
 import { useLayoutEngine } from "./components/use-layout-engine";
 import { useWorkspaceEvaluation } from "./components/use-workspace-evaluation";
 import { componentsLibrary, getCell } from "./data/library";
-import { planSignature } from "./domain/packing";
-import { activeServiceReservations } from "./domain/service-reservations";
 import { saveFile } from "./platform/save-file";
 import { PlannerScene } from "./scene/PlannerScene";
 import { DEFAULT_HOLDER_OPTIONS } from "./scene/use-holder-pieces";
 import { usePlannerStore } from "./store/planner-store";
-import type { CellSpec, PackPlan } from "./domain/types";
+import type { CellSpec, PackPlan } from "./bindings";
+import { planSignature } from "./lib/plan";
+import { activeServiceReservations } from "./store/service-reservations";
 
 function exportProject() {
   const state = usePlannerStore.getState();

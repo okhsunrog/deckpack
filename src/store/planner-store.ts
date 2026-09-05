@@ -3,9 +3,8 @@ import { persist } from "zustand/middleware";
 import {
   createDefaultServiceReservations,
   setWiringExitMode as updateWiringExitMode,
-} from "../domain/service-reservations";
+} from "./service-reservations";
 import { createSparkCaseEnclosure } from "../data/enclosures";
-import type { HolderStyle } from "../domain/holder";
 import { sanitizePersistedConfig, sanitizePersistedPlacements } from "./persisted-state";
 import type {
   ComponentPlacement,
@@ -17,7 +16,8 @@ import type {
   ServiceReservation,
   ToleranceLayer,
   WiringExitMode,
-} from "../domain/types";
+  HolderStyle,
+} from "../bindings";
 
 export const defaultConfig: PlannerConfig = {
   enclosure: createSparkCaseEnclosure(),

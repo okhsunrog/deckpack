@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { commands } from "../bindings";
-import type { CellSpec, EnumerationResponse, PackPlan, PlannerConfig } from "../domain/types";
+import { commands, type CellSpec, type PackPlan, type PlannerConfig } from "../bindings";
 
 interface LayoutEngineState {
   plans: PackPlan[];
@@ -28,7 +27,7 @@ export function useLayoutEngine(config: PlannerConfig, cell: CellSpec): LayoutEn
       .then((result) => {
         if (requestIdRef.current !== requestId) return;
         if (result.status === "ok") {
-          setState({ ...(result.data as EnumerationResponse), loading: false });
+          setState({ ...result.data, loading: false });
         } else {
           console.error("Layout enumeration failed", result.error);
           setState((current) => ({ ...current, loading: false }));

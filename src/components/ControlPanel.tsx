@@ -1,6 +1,6 @@
 import { cellsLibrary } from "../data/library";
 import { sparkCaseAsset } from "../data/enclosures";
-import { activeServiceReservations, separatedOffsets } from "../domain/service-reservations";
+import { activeServiceReservations, separatedOffsets } from "../store/service-reservations";
 import type {
   Axis,
   PackFace,
@@ -8,7 +8,7 @@ import type {
   PackRequest,
   PlannerConfig,
   ServiceReservation,
-} from "../domain/types";
+} from "../bindings";
 import { usePlannerStore } from "../store/planner-store";
 import { NumberField } from "./NumberField";
 

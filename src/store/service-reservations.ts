@@ -1,4 +1,6 @@
-import type { PackFace, PackRequest, ServiceReservation, Vec3, WiringExitMode } from "./types";
+import type { PackFace, PackRequest, ServiceReservation, WiringExitMode } from "../bindings";
+
+type Vec3 = [number, number, number];
 
 export const COMBINED_WIRING_EXIT_ID = "wiring-exit";
 export const POWER_OUTPUT_ID = "power-output";

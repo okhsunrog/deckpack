@@ -1,5 +1,7 @@
 import sparkCaseData from "./enclosures/spark-case-heightmap.json";
-import type { Dimensions3D, MeshHeightMapEnclosureSpec } from "../domain/types";
+import type { Dimensions3D, EnclosureSpec } from "../bindings";
+
+export type MeshHeightMapEnclosureSpec = Extract<EnclosureSpec, { kind: "mesh-heightmap" }>;
 
 export interface HeightMapAsset {
   id: string;

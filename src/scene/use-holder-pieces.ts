@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { commands, type HolderOptions, type HolderPieces } from "../bindings";
-import type { CellSpec, EnclosureSpec, PackPlan, ToleranceLayer } from "../domain/types";
+import {
+  commands,
+  type CellSpec,
+  type EnclosureSpec,
+  type HolderOptions,
+  type HolderPieces,
+  type PackPlan,
+  type ToleranceLayer,
+} from "../bindings";
 
 /** Default print options, mirrored from `HolderOptions::default()` in Rust. */
 export const DEFAULT_HOLDER_OPTIONS: HolderOptions = {

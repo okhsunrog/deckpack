@@ -1,5 +1,5 @@
-import { boxSize } from "../domain/geometry";
-import type { PackPlan, WorkspaceEvaluation } from "../domain/types";
+import type { PackPlan, WorkspaceEvaluation } from "../bindings";
+import { boxSize } from "../lib/box";
 
 function formatVolume(valueMm3: number) {
   return `${(valueMm3 / 1_000_000).toFixed(2)} л`;

@@ -9,8 +9,7 @@
     "lint": "vp lint",
     "preview": "vp preview",
     "prepare": "vp config",
-    "tauri": "tauri",
-    "fixtures": "bun scripts/dump-fixtures.ts"
+    "tauri": "tauri"
   },
   "dependencies": {
     "@fontsource/barlow-condensed": "^5.3.0",

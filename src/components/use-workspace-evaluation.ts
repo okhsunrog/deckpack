@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { commands } from "../bindings";
-import type {
-  ComponentPlacement,
-  EnclosureSpec,
-  PackPlan,
-  WorkspaceEvaluation,
-} from "../domain/types";
+import {
+  commands,
+  type ComponentPlacement,
+  type EnclosureSpec,
+  type PackPlan,
+  type WorkspaceEvaluation,
+} from "../bindings";
 
 /**
  * Collision / free-volume evaluation of the placed components, computed by
@@ -32,7 +32,7 @@ export function useWorkspaceEvaluation(
       .then((result) => {
         if (requestIdRef.current !== requestId) return;
         if (result.status === "ok") {
-          setEvaluation(result.data as WorkspaceEvaluation);
+          setEvaluation(result.data);
         } else {
           console.error("Workspace evaluation failed", result.error);
         }

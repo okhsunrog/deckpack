@@ -28,9 +28,9 @@ import {
   Vector3,
 } from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
-import { getHeightMapAsset } from "../data/enclosures";
-import { boxCenter, boxSize, componentBox } from "../domain/geometry";
-import type { HolderStyle } from "../domain/holder";
+import { getHeightMapAsset, type MeshHeightMapEnclosureSpec } from "../data/enclosures";
+import type { HolderStyle } from "../bindings";
+import { boxCenter, boxSize, nominalComponentBox } from "../lib/box";
 import { assembledPieceTriangles } from "./holder-mesh";
 import { DEFAULT_HOLDER_OPTIONS, useHolderPieces } from "./use-holder-pieces";
 import type {
@@ -41,14 +41,14 @@ import type {
   ComponentVisual,
   Dimensions3D,
   EnclosureSpec,
-  MeshHeightMapEnclosureSpec,
   PackPlan,
   ServiceReservation,
   ServiceVolume,
   ToleranceLayer,
-  Vec3,
   WorkspaceEvaluation,
-} from "../domain/types";
+} from "../bindings";
+
+type Vec3 = [number, number, number];
 
 interface PlannerSceneProps {
   enclosure: EnclosureSpec;
@@ -697,10 +697,10 @@ function ComponentObjects({
   onContextMenu: (event: ThreeEvent<MouseEvent>, id: string) => void;
 }) {
   return components.map((component) => {
-    const box = componentBox(component, enclosure);
+    const state = evaluation?.components.find((item) => item.id === component.id);
+    const box = state?.box ?? nominalComponentBox(component, enclosure);
     const center = boxCenter(box);
     const spec = specs.find((candidate) => candidate.id === component.componentId);
-    const state = evaluation?.components.find((item) => item.id === component.id);
     const invalid = state?.collides || state?.outside;
     const selected = component.id === selectedId;
     const fallbackSpec: ComponentSpec = {

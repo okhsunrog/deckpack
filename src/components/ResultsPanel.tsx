@@ -1,7 +1,7 @@
 import { componentsLibrary } from "../data/library";
-import { boxSize } from "../domain/geometry";
-import { formatFactors, planSignature } from "../domain/packing";
-import type { ComponentPlacement, PackPlan, WorkspaceEvaluation } from "../domain/types";
+import type { ComponentPlacement, PackPlan, WorkspaceEvaluation } from "../bindings";
+import { boxSize } from "../lib/box";
+import { formatFactors, planSignature } from "../lib/plan";
 import { usePlannerStore } from "../store/planner-store";
 import { NumberField } from "./NumberField";
 
