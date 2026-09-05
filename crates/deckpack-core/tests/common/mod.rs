@@ -9,7 +9,23 @@ use serde_json::Value;
 /// the last ulp of transcendental functions.
 pub const TOLERANCE: f64 = 1e-6;
 
+/// The fixtures were recorded against the enclosure assets snapshotted in
+/// `fixtures/domain/assets`; the bundled assets may since have been
+/// regenerated, so every fixture test pins the recorded versions first.
+pub fn use_recorded_assets() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/domain/assets");
+    for entry in fs::read_dir(&dir).expect("fixtures/domain/assets") {
+        let path = entry.unwrap().path();
+        if path.extension().is_some_and(|ext| ext == "json") {
+            let asset: deckpack_core::HeightMapAsset =
+                serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+            deckpack_core::assets::replace(asset);
+        }
+    }
+}
+
 pub fn fixtures(kind: &str) -> Vec<(String, Value)> {
+    use_recorded_assets();
     let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/domain")
         .join(kind);

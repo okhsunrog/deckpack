@@ -207,6 +207,17 @@ pub fn compiled(
     Ok(map)
 }
 
+/// Forget the compiled map of an asset (after the asset was replaced).
+pub fn invalidate(asset_id: &str) {
+    if let Some(cache) = COMPILED
+        .write()
+        .expect("height map cache poisoned")
+        .as_mut()
+    {
+        cache.remove(asset_id);
+    }
+}
+
 /// Compiles the height map once so later queries can unwrap it.
 pub fn ensure_compiled(spec: &EnclosureSpec) -> Result<(), HeightMapError> {
     match spec.as_height_map() {

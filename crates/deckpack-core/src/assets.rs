@@ -30,6 +30,15 @@ pub fn register(asset: HeightMapAsset) {
     }
 }
 
+/// Replace (or add) an asset and drop any compiled height map for it. Used
+/// by tests that must run against a recorded snapshot of an asset.
+pub fn replace(asset: HeightMapAsset) {
+    let mut assets = ASSETS.write().expect("asset registry poisoned");
+    assets.retain(|existing| existing.id != asset.id);
+    crate::heightmap::invalidate(&asset.id);
+    assets.push(asset);
+}
+
 pub fn with_asset<R>(id: &str, f: impl FnOnce(&HeightMapAsset) -> R) -> Result<R, AssetError> {
     let assets = ASSETS.read().expect("asset registry poisoned");
     assets
