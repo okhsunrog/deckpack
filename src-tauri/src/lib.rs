@@ -31,6 +31,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
         ])
 }
 
+#[cfg(any(debug_assertions, test))]
 const BINDINGS_PATH: &str = "../src/bindings.ts";
 
 /// Commands with raw (non-JSON) responses that tauri-specta cannot describe.
@@ -38,6 +39,7 @@ fn raw_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
     tauri::generate_handler![commands::holder_mesh]
 }
 
+#[cfg(any(debug_assertions, test))]
 fn export_bindings(builder: &Builder<tauri::Wry>) {
     builder
         .export(
