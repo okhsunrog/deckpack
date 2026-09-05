@@ -19,6 +19,9 @@ export const DEFAULT_HOLDER_OPTIONS: HolderOptions = {
   edgeStripWidthMm: 12,
   minWallMm: 0.8,
   cap: false,
+  spacers: true,
+  webMm: 2.5,
+  cuspHeight: 1,
 };
 
 /**

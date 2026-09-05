@@ -52,7 +52,7 @@ fn holder_fixtures_round_trip() {
         // options must still parse and serialise back to the same values.
         let options: HolderOptions = serde_json::from_value(fixture["options"].clone()).unwrap();
         let mut back = serde_json::to_value(options).unwrap();
-        for added_later in ["minWallMm", "cap"] {
+        for added_later in ["minWallMm", "cap", "spacers", "webMm", "cuspHeight"] {
             back.as_object_mut().unwrap().remove(added_later);
         }
         assert_close(&fixture["options"], &back, &format!("{name}.options"));

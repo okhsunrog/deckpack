@@ -330,7 +330,15 @@ pub fn compute_holder_pieces(
                     .iter()
                     .any(|disc| (cradle.t[i] - disc.center).abs() < bore + 0.6);
                 if !near {
-                    cradle.top[i] = cradle.top[i].min(cradle.bottom[i] + 2.5);
+                    cradle.top[i] = cradle.top[i].min(cradle.bottom[i] + options.web_mm);
+                }
+            }
+            // Lower cusps that do not need to reach the cell centre line.
+            if options.cusp_height < 1.0 {
+                let drop = bore * (1.0 - options.cusp_height.clamp(0.0, 1.0));
+                for i in 0..cradle.t.len() {
+                    let limit = nearest_z(bottom_layer, cradle.t[i]) - drop;
+                    cradle.top[i] = cradle.top[i].min(limit).max(cradle.bottom[i]);
                 }
             }
             cap_cusps(&mut cradle, options.min_wall_mm);
@@ -345,7 +353,12 @@ pub fn compute_holder_pieces(
             });
 
             // Interlayer spacers between each pair of adjacent layers.
-            for index in 0..layers.len().saturating_sub(1) {
+            let spacer_pairs = if options.spacers {
+                layers.len().saturating_sub(1)
+            } else {
+                0
+            };
+            for index in 0..spacer_pairs {
                 let lower = &layers[index];
                 let upper = &layers[index + 1];
                 let mut spacer = wave_profile(
@@ -361,7 +374,7 @@ pub fn compute_holder_pieces(
                 // The staggered shift leaves each end with cells on one side
                 // only. Solid slab there would hold nothing, so cap it to a
                 // thin web that follows the existing arc instead.
-                let web_mm = 2.5;
+                let web_mm = options.web_mm;
                 for i in 0..spacer.t.len() {
                     let t = spacer.t[i];
                     let near_upper = upper
@@ -399,7 +412,7 @@ pub fn compute_holder_pieces(
             // cell heights, flat top, thin web where no cell is near.
             if options.cap {
                 let top_layer = &layers[layers.len() - 1];
-                let web_mm = 2.5;
+                let web_mm = options.web_mm;
                 let cap_top = max_of(top_layer.iter().map(|d| d.z)) + bore + web_mm;
                 let mut cap = wave_profile(
                     |t| nearest_z(top_layer, t),

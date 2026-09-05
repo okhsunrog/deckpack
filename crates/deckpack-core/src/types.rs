@@ -519,6 +519,30 @@ pub struct HolderOptions {
     /// cradle / spacer / cap sandwich can be screwed together through rails.
     #[serde(default)]
     pub cap: bool,
+    /// Emit interlayer spacers. With no layer lift the upper cells already nest
+    /// in the valleys of the lower ones, so spacers only fill the wedges.
+    #[serde(default = "default_true")]
+    pub spacers: bool,
+    /// Thickness of the thin web that bridges stretches without a cell.
+    #[serde(default = "default_web_mm")]
+    pub web_mm: f64,
+    /// How far the cradle cusps rise between cells, as a fraction of the bore
+    /// radius: 1 reaches the cell centre line, 0.6 saves plastic while still
+    /// locating the cells.
+    #[serde(default = "default_cusp_height")]
+    pub cusp_height: f64,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_web_mm() -> f64 {
+    2.5
+}
+
+fn default_cusp_height() -> f64 {
+    1.0
 }
 
 impl Default for HolderOptions {
@@ -532,6 +556,9 @@ impl Default for HolderOptions {
             edge_strip_width_mm: 12.0,
             min_wall_mm: 0.8,
             cap: false,
+            spacers: true,
+            web_mm: 2.5,
+            cusp_height: 1.0,
         }
     }
 }

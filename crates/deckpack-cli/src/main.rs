@@ -166,6 +166,21 @@ struct HolderArgs {
     /// Screw hole diameter through the rails for --csg, millimetres (0 = none).
     #[arg(long, default_value_t = 3.2)]
     screw: f64,
+    /// Add end rails (with screw holes) to the CSG pieces.
+    #[arg(long, requires = "csg")]
+    rails: bool,
+    /// Skip the interlayer spacers: cradles only.
+    #[arg(long)]
+    no_spacers: bool,
+    /// Thin web thickness in millimetres where no cell is near.
+    #[arg(long)]
+    web: Option<f64>,
+    /// Cradle cusp height as a fraction of the bore radius (1 = to the cell centre).
+    #[arg(long)]
+    cusp_height: Option<f64>,
+    /// Width of the edge bands in millimetres (edge style).
+    #[arg(long)]
+    band: Option<f64>,
 }
 
 #[derive(Args)]
@@ -521,6 +536,16 @@ fn holder(args: HolderArgs) -> Result<()> {
         options.terminal_margin_mm = margin;
     }
     options.cap = args.cap;
+    options.spacers = !args.no_spacers;
+    if let Some(web) = args.web {
+        options.web_mm = web;
+    }
+    if let Some(fraction) = args.cusp_height {
+        options.cusp_height = fraction;
+    }
+    if let Some(band) = args.band {
+        options.edge_strip_width_mm = band;
+    }
     let build = generate_holder(
         plan,
         cell,
@@ -559,7 +584,7 @@ fn holder(args: HolderArgs) -> Result<()> {
         )?;
         if args.csg {
             let csg = CsgOptions {
-                rail_width_mm: args.rail_width,
+                rail_width_mm: if args.rails { args.rail_width } else { 0.0 },
                 screw_diameter_mm: args.screw,
                 ..CsgOptions::default()
             };

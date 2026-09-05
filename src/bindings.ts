@@ -209,6 +209,19 @@ export type HolderOptions = {
 	 *  cradle / spacer / cap sandwich can be screwed together through rails.
 	 */
 	cap?: boolean,
+	/**
+	 *  Emit interlayer spacers. With no layer lift the upper cells already nest
+	 *  in the valleys of the lower ones, so spacers only fill the wedges.
+	 */
+	spacers?: boolean,
+	/**  Thickness of the thin web that bridges stretches without a cell. */
+	webMm?: number,
+	/**
+	 *  How far the cradle cusps rise between cells, as a fraction of the bore
+	 *  radius: 1 reaches the cell centre line, 0.6 saves plastic while still
+	 *  locating the cells.
+	 */
+	cuspHeight?: number,
 };
 
 export type HolderPieceSummary = {
