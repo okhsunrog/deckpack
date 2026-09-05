@@ -8,6 +8,7 @@
 //! unified type mode cannot express conditional omission, and the frontend
 //! treats `null` and `undefined` alike.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -16,7 +17,7 @@ pub type Vec3 = [f64; 3];
 /// Integer grid triple (cells per axis).
 pub type Grid3 = [u32; 3];
 
-#[derive(Serialize, Deserialize, Type, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum Axis {
     X,
@@ -38,14 +39,14 @@ impl Axis {
 
 pub type CellOrientation = Axis;
 
-#[derive(Serialize, Deserialize, Type, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
 pub enum PackingMode {
     Brick,
     Staggered,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
 pub enum PlacementAnchor {
     Tail,
@@ -54,7 +55,7 @@ pub enum PlacementAnchor {
     Profile,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Copy, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Copy, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Dimensions3D {
     pub length: f64,
@@ -62,14 +63,14 @@ pub struct Dimensions3D {
     pub height: f64,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Copy, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Copy, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Box3D {
     pub min: Vec3,
     pub max: Vec3,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceMetadata {
     pub url: String,
@@ -78,7 +79,7 @@ pub struct SourceMetadata {
     pub dimension_basis: String,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct VisualAssetSource {
     pub url: String,
@@ -87,7 +88,7 @@ pub struct VisualAssetSource {
     pub license_url: String,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ProceduralStyle {
     FinnedCase,
@@ -95,7 +96,7 @@ pub enum ProceduralStyle {
     Pcb,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(
     tag = "kind",
     rename_all = "kebab-case",
@@ -125,13 +126,13 @@ pub enum ComponentVisual {
     },
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CellFormFactor {
     #[serde(rename = "21700")]
     Cyl21700,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CellSpec {
     pub id: String,
@@ -153,7 +154,7 @@ pub struct CellSpec {
     pub source: SourceMetadata,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
 pub enum ToleranceKind {
     Nickel,
@@ -163,7 +164,7 @@ pub enum ToleranceKind {
     OuterWrap,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
 pub enum ToleranceScope {
     Cell,
@@ -171,7 +172,7 @@ pub enum ToleranceScope {
     PackBlock,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
 pub enum ToleranceApplication {
     Radial,
@@ -182,7 +183,7 @@ pub enum ToleranceApplication {
     AllFaces,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ToleranceLayer {
     pub id: String,
@@ -193,7 +194,7 @@ pub struct ToleranceLayer {
     pub thickness_mm: f64,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
 pub enum PackFace {
     PositiveX,
@@ -220,14 +221,14 @@ impl PackFace {
     }
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
 pub enum WiringExitMode {
     Combined,
     Separate,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
 pub enum ServiceKind {
     WiringExit,
@@ -235,7 +236,7 @@ pub enum ServiceKind {
     PowerOutput,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceReservation {
     pub id: String,
@@ -249,7 +250,7 @@ pub struct ServiceReservation {
     pub enabled: bool,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(
     tag = "kind",
     rename_all = "kebab-case",
@@ -275,7 +276,7 @@ impl EnclosureSpec {
 }
 
 /// Cell axis requested by the user: a fixed axis or let the planner pick.
-#[derive(Serialize, Deserialize, Type, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum OrientationRequest {
     Auto,
@@ -295,7 +296,7 @@ impl OrientationRequest {
     }
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PackRequest {
     pub series_count: u32,
@@ -311,14 +312,14 @@ pub struct PackRequest {
     pub service_reservations: Vec<ServiceReservation>,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PlannerConfig {
     pub enclosure: EnclosureSpec,
     pub pack: PackRequest,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CellPlacement {
     pub id: String,
@@ -329,7 +330,7 @@ pub struct CellPlacement {
     pub position: Vec3,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SeriesGroup {
     pub id: String,
@@ -339,7 +340,7 @@ pub struct SeriesGroup {
     pub cell_ids: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PackBlock {
     pub id: String,
@@ -347,7 +348,7 @@ pub struct PackBlock {
     pub envelope: Box3D,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceVolume {
     pub id: String,
@@ -357,7 +358,7 @@ pub struct ServiceVolume {
     pub box_: Box3D,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Copy, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Copy, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct LargestFreeBox {
     #[serde(rename = "box")]
@@ -365,7 +366,7 @@ pub struct LargestFreeBox {
     pub volume_mm3: f64,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct LayoutMetrics {
     pub score: f64,
@@ -382,7 +383,7 @@ pub struct LayoutMetrics {
     pub manufacturability: f64,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PackPlan {
     pub id: String,
@@ -405,7 +406,7 @@ pub struct PackPlan {
     pub metrics: LayoutMetrics,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
 pub enum ComponentCategory {
     Esc,
@@ -414,7 +415,7 @@ pub enum ComponentCategory {
     Custom,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ComponentSpec {
     pub id: String,
@@ -434,7 +435,7 @@ pub struct ComponentSpec {
     pub visual: Option<ComponentVisual>,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ComponentPlacement {
     pub id: String,
@@ -449,7 +450,7 @@ pub struct ComponentPlacement {
     pub dimensions_mm: Dimensions3D,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ComponentEvaluation {
     pub id: String,
@@ -459,7 +460,7 @@ pub struct ComponentEvaluation {
     pub outside: bool,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceEvaluation {
     pub components: Vec<ComponentEvaluation>,
@@ -469,14 +470,14 @@ pub struct WorkspaceEvaluation {
     pub largest_free_box: LargestFreeBox,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct EnumerationRequest {
     pub config: PlannerConfig,
     pub cell: CellSpec,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct EnumerationResponse {
     pub plans: Vec<PackPlan>,
@@ -485,7 +486,7 @@ pub struct EnumerationResponse {
 
 /* ------------------------------------------------------------- holders */
 
-#[derive(Serialize, Deserialize, Type, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
 pub enum HolderStyle {
     /// One wide belt per row holds the cells at mid-length.
@@ -494,7 +495,7 @@ pub enum HolderStyle {
     Edge,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Copy, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Copy, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct HolderOptions {
     /// Extra radius on top of the reserved cell radius so cells drop in.
@@ -525,7 +526,7 @@ impl Default for HolderOptions {
 
 /// One printable comb: a wave profile in the (lateral, z) plane extruded
 /// along the cell axis.
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfilePiece {
     pub label: String,
@@ -539,7 +540,7 @@ pub struct ProfilePiece {
     pub axial_center_mm: f64,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct HolderPieces {
     pub pieces: Vec<ProfilePiece>,
@@ -547,7 +548,7 @@ pub struct HolderPieces {
     pub lateral_index: u8,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct HolderPieceSummary {
     pub label: String,
@@ -558,7 +559,7 @@ pub struct HolderPieceSummary {
 
 /* -------------------------------------------------------------- assets */
 
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DepthMap {
     pub origin_mm: [f64; 2],
@@ -574,14 +575,14 @@ pub struct DepthMap {
     pub data_base64: String,
 }
 
-#[derive(Serialize, Deserialize, Type, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum HeightMapKind {
     MeshHeightmap,
 }
 
 /// Sampled inner surface of an enclosure, generated from its STL.
-#[derive(Serialize, Deserialize, Type, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct HeightMapAsset {
     pub id: String,
