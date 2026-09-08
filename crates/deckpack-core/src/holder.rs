@@ -294,11 +294,15 @@ pub fn compute_holder_pieces(
             // ridge while filling any gap down to the deep floor.
             let bottom_layer = &layers[0];
             let floor_z = -enclosure_height / 2.0;
+            // Bites for every cell of the row: a loose upper cell that rolled
+            // off the end of its row rests on the floor and must clear the
+            // slab too; nested cells stay above it and carve nothing.
+            let row_discs: Vec<Disc> = layers.iter().flatten().copied().collect();
             let mut cradle = wave_profile(
                 |_| floor_z,
                 |t| nearest_z(bottom_layer, t),
                 &[],
-                bottom_layer,
+                &row_discs,
                 bore,
                 t_min,
                 t_max,

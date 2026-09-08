@@ -371,6 +371,9 @@ struct ProfilePlacementRequest<'a> {
     cylinder_half_length_mm: f64,
     /// Holder base under the cells.
     floor_mm: f64,
+    /// Loose cells: nothing holds the upper rows, so after draping they roll
+    /// along whatever they rest on (see `settle_loose_cells`).
+    loose: Option<LooseCells<'a>>,
 }
 
 #[derive(Clone, Debug)]
@@ -380,9 +383,10 @@ struct ProfilePlacement {
     y_offset: f64,
     /// Final z of every local cell: the lattice drapes over the terrain.
     cell_z: Vec<f64>,
-    /// Per-cell x adjustment: an edge column that would push its upper
-    /// neighbours up instead slides outward along the ramp until it clears.
-    cell_dx: Vec<f64>,
+    /// Per-cell adjustment along the lateral axis: an edge column that would
+    /// push its upper neighbours up instead slides outward along the ramp
+    /// until it clears, and loose upper cells roll into the nearest valley.
+    cell_shift: Vec<f64>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -422,12 +426,18 @@ impl Draper<'_> {
         }
     }
 
+    /// Resting height of a cell on its own floor, shifted `shift_mm` along
+    /// the lateral axis from its lattice position.
     fn own_floor(&self, index: usize, x: f64, shift_mm: f64) -> f64 {
         let cell = self.request.local_cells[index];
-        heightmap::min_cylinder_center_z(
-            self.request.enclosure,
-            &self.cylinder(cell[0] + x + shift_mm, cell[1] + self.y_offset),
-        ) + self.request.floor_mm
+        let (mut cx, mut cy) = (cell[0] + x, cell[1] + self.y_offset);
+        if self.request.axial_index == 0 {
+            cy += shift_mm;
+        } else {
+            cx += shift_mm;
+        }
+        heightmap::min_cylinder_center_z(self.request.enclosure, &self.cylinder(cx, cy))
+            + self.request.floor_mm
     }
 
     /// Drape (or rigidly settle) the lattice at one x offset.
@@ -813,17 +823,162 @@ fn profile_placements(request: &ProfilePlacementRequest<'_>) -> (Vec<ProfilePlac
         .into_iter()
         .map(|(x, anchor)| {
             let candidate = feasible.iter().find(|item| item.x == x).unwrap();
-            let (cell_z, cell_dx) = draper.slide_edge_columns(x, &candidate.cell_z);
+            let (mut cell_z, mut cell_shift) = draper.slide_edge_columns(x, &candidate.cell_z);
+            if let Some(loose) = &request.loose {
+                settle_loose_cells(
+                    loose,
+                    |index, shift| draper.own_floor(index, x, shift),
+                    &mut cell_z,
+                    &mut cell_shift,
+                );
+            }
             ProfilePlacement {
                 anchor,
                 x_offset: x,
                 y_offset,
                 cell_z,
-                cell_dx,
+                cell_shift,
             }
         })
         .collect();
     (placements, scanned_count)
+}
+
+/* ------------------------------------------------------- loose cells */
+
+/// Cells of the upper rows that nothing holds in place: no spacer web sits
+/// between the nested rows, so they are free to roll.
+#[derive(Clone, Copy, Debug)]
+struct LooseCells<'a> {
+    cells: &'a [Vec3],
+    cell_layers: &'a [u32],
+    axial: usize,
+    lateral: usize,
+    /// Centre distance at which two loose cells touch.
+    contact_mm: f64,
+}
+
+const ROLL_STEPS_MM: [f64; 4] = [0.5, 0.1, 0.02, 0.004];
+const ROLL_MAX_SWEEPS: usize = 12;
+
+/// Let every loose upper cell roll to where it would actually come to rest.
+///
+/// Cells of one axial row form a 2D disc problem in the (lateral, z) plane:
+/// a cell rests at height `h(t) = max(floor(t), arcs of the other cells)`
+/// and, being round, rolls downhill on `h` until it reaches a local minimum:
+/// a valley between two lower cells, the corner between a cell and the floor
+/// or a wall, or a dip of the floor itself. Rolling never raises a cell, so a
+/// lattice that cleared the lid still does. Rows are relaxed centre-out and
+/// swept until nothing moves, which makes the result deterministic.
+///
+/// `floor(index, shift)` is the resting height of a cell on the floor alone
+/// when displaced `shift` along the lateral axis (non-finite: no floor there).
+fn settle_loose_cells(
+    loose: &LooseCells<'_>,
+    floor: impl Fn(usize, f64) -> f64,
+    cell_z: &mut [f64],
+    shift: &mut [f64],
+) {
+    let LooseCells {
+        cells,
+        cell_layers,
+        axial,
+        lateral,
+        contact_mm,
+    } = *loose;
+    let mut rows: Vec<(f64, Vec<usize>)> = Vec::new();
+    for (index, cell) in cells.iter().enumerate() {
+        match rows
+            .iter_mut()
+            .find(|(a, _)| (*a - cell[axial]).abs() < 1.0)
+        {
+            Some((_, members)) => members.push(index),
+            None => rows.push((cell[axial], vec![index])),
+        }
+    }
+    for (_, members) in &rows {
+        let position = |index: usize, shift: &[f64]| cells[index][lateral] + shift[index];
+        let center =
+            members.iter().map(|&i| position(i, shift)).sum::<f64>() / members.len() as f64;
+        let mut movers: Vec<usize> = members
+            .iter()
+            .copied()
+            .filter(|&i| cell_layers[i] > 0)
+            .collect();
+        movers.sort_by(|&a, &b| {
+            (position(a, shift) - center)
+                .abs()
+                .total_cmp(&(position(b, shift) - center).abs())
+                .then(a.cmp(&b))
+        });
+        for _ in 0..ROLL_MAX_SWEEPS {
+            let mut moved = false;
+            for &i in &movers {
+                let t0 = position(i, shift);
+                let rest = |t: f64| {
+                    let mut h = floor(i, t - cells[i][lateral]);
+                    if !h.is_finite() {
+                        return f64::INFINITY;
+                    }
+                    for &j in members {
+                        if j == i {
+                            continue;
+                        }
+                        let dt = t - position(j, shift);
+                        if dt.abs() < contact_mm {
+                            h = h.max(cell_z[j] + (contact_mm * contact_mm - dt * dt).sqrt());
+                        }
+                    }
+                    h
+                };
+                let (t, z) = roll_downhill(&rest, t0);
+                if !z.is_finite() {
+                    continue;
+                }
+                if (t - t0).abs() > 1e-6 || (z - cell_z[i]).abs() > 1e-6 {
+                    moved = true;
+                }
+                shift[i] = t - cells[i][lateral];
+                cell_z[i] = z;
+            }
+            if !moved {
+                break;
+            }
+        }
+    }
+}
+
+/// Walk downhill on the resting-height function from `t0`, coarse steps
+/// first, then finer ones, until neither neighbour is lower. On level ground
+/// the walk backs up towards `t0` as far as the height allows, so a cell that
+/// rolled off an arc stops where it first met the floor instead of wherever
+/// the coarse step overshot to.
+fn roll_downhill(rest: &impl Fn(f64) -> f64, t0: f64) -> (f64, f64) {
+    let mut t = t0;
+    let mut z = rest(t);
+    for step in ROLL_STEPS_MM {
+        for _ in 0..2000 {
+            let left = rest(t - step);
+            let right = rest(t + step);
+            if left < z - 1e-9 && left <= right {
+                t -= step;
+                z = left;
+            } else if right < z - 1e-9 {
+                t += step;
+                z = right;
+            } else {
+                let back = if t0 < t { t - step } else { t + step };
+                let back_z = if t0 < t { left } else { right };
+                if (back - t0).abs() < (t - t0).abs() - 1e-12 && back_z <= z + 1e-9 {
+                    t = back;
+                    z = back_z;
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+    (t, z)
 }
 
 /// Wall and lid clearance for a settled pack; the floor contact itself is 0.
@@ -1151,9 +1306,29 @@ struct Lattice {
     routed: Vec<usize>,
     /// Centre distance up to which two cells of adjacent layers support each other.
     support_distance_mm: f64,
+    /// Centre distance at which two nested (loose) cells touch.
+    nesting_distance_mm: f64,
 }
 
 impl Lattice {
+    /// The upper rows of a staggered lattice roll freely when nothing sits
+    /// between the nested rows: no spacer web and no explicit layer lift
+    /// (either implies holder material holding the rows apart). Brick packs
+    /// are stacked in a grid and never roll.
+    fn loose(&self, mode: PackingMode, tolerance: &CompiledTolerances) -> Option<LooseCells<'_>> {
+        (mode == PackingMode::Staggered
+            && tolerance.between_rows <= 0.0
+            && tolerance.between_layers <= 0.0
+            && self.layer_count > 1)
+            .then_some(LooseCells {
+                cells: &self.cells,
+                cell_layers: &self.cell_layers,
+                axial: self.axial,
+                lateral: self.radial_index,
+                contact_mm: self.nesting_distance_mm,
+            })
+    }
+
     /// Cells of one group.
     fn group_cells<'a, T>(&self, group_index: usize, items: &'a [T]) -> &'a [T] {
         let start = self.group_starts[group_index];
@@ -1273,6 +1448,7 @@ fn build_lattice(context: &Context<'_>, task: Task) -> Option<Lattice> {
         support_distance_mm: template.cell_pitch[radial_index]
             .max(template.reservation_size[2] + tolerance.between_groups)
             + 0.6,
+        nesting_distance_mm: template.reservation_cell_size[radial_index] + tolerance.nesting_gap(),
     };
     lattice.separated(&lattice.cells).then_some(lattice)
 }
@@ -1324,22 +1500,49 @@ fn candidate_placements(
     context: &Context<'_>,
     lattice: &Lattice,
     local_bounds: &Box3D,
-    rigid: bool,
+    mode: PackingMode,
 ) -> (Vec<ProfilePlacement>, u32) {
     let tolerance = &context.tolerance;
+    let loose = lattice.loose(mode, tolerance);
     match context.config.enclosure.as_height_map() {
         None => {
+            let container = &context.container;
+            let lateral = lattice.radial_index;
+            let half_lateral = lattice.reservation_cell_size[lateral] / 2.0 + tolerance.outer_wrap;
             let placements = ANCHORS
                 .iter()
                 .map(|&anchor| {
-                    let mut offset = anchor_offset(local_bounds, &context.container, anchor);
+                    let mut offset = anchor_offset(local_bounds, container, anchor);
                     offset[2] += tolerance.floor;
+                    let mut cell_z: Vec<f64> =
+                        lattice.cells.iter().map(|p| p[2] + offset[2]).collect();
+                    let mut cell_shift = vec![0.0; lattice.cells.len()];
+                    if let Some(loose) = &loose {
+                        // Flat floor between straight walls: the lowest cell
+                        // centre of the lattice is where any cell would rest.
+                        let floor_z = cell_z.iter().copied().fold(f64::INFINITY, f64::min);
+                        settle_loose_cells(
+                            loose,
+                            |index, shift| {
+                                let t = lattice.cells[index][lateral] + offset[lateral] + shift;
+                                if t < container.min[lateral] + half_lateral
+                                    || t > container.max[lateral] - half_lateral
+                                {
+                                    f64::INFINITY
+                                } else {
+                                    floor_z
+                                }
+                            },
+                            &mut cell_z,
+                            &mut cell_shift,
+                        );
+                    }
                     ProfilePlacement {
                         anchor,
                         x_offset: offset[0],
                         y_offset: offset[1],
-                        cell_z: lattice.cells.iter().map(|p| p[2] + offset[2]).collect(),
-                        cell_dx: vec![0.0; lattice.cells.len()],
+                        cell_z,
+                        cell_shift,
                     }
                 })
                 .collect();
@@ -1359,8 +1562,9 @@ fn candidate_placements(
                 cylinder_radius_mm: radius + tolerance.outer_wrap,
                 cylinder_half_length_mm: half_length + tolerance.outer_wrap,
                 support_distance_mm: lattice.support_distance_mm,
-                rigid,
+                rigid: mode == PackingMode::Brick,
                 floor_mm: tolerance.floor,
+                loose,
             })
         }
     }
@@ -1382,11 +1586,13 @@ fn assemble_plan(
         .iter()
         .enumerate()
         .map(|(index, p)| {
-            [
-                p[0] + placement.x_offset + placement.cell_dx[index],
+            let mut position = [
+                p[0] + placement.x_offset,
                 p[1] + placement.y_offset,
                 placement.cell_z[index],
-            ]
+            ];
+            position[lattice.radial_index] += placement.cell_shift[index];
+            position
         })
         .collect();
     // Draping preserves lattice spacing pair-wise; this guards the
@@ -1547,10 +1753,7 @@ fn run_task(context: &Context<'_>, task: Task) -> (Vec<PackPlan>, u32) {
     if (0..3).any(|axis| required_size[axis] > enclosure_size[axis] + 1e-6) {
         return (Vec::new(), 0);
     }
-    // Brick packs stack cells vertically, so a column riding a ramp would
-    // push its whole tower up; only staggered lattices drape per column.
-    let rigid = task.mode == PackingMode::Brick;
-    let (placements, explored) = candidate_placements(context, &lattice, &local.bounds, rigid);
+    let (placements, explored) = candidate_placements(context, &lattice, &local.bounds, task.mode);
     let plans = placements
         .iter()
         .filter_map(|placement| assemble_plan(context, task, &lattice, &reservations, placement))
@@ -1637,13 +1840,64 @@ mod tests {
                 layer.thickness_mm = 0.0;
             }
         }
+        // Loose cells roll: every upper cell ends up touching a lower one
+        // (in a valley or beside the row end), never hanging above it.
+        let contact = diameter + 2.0 * radial + compound;
         let (_, nested) = nesting_distances(bare);
         for d in &nested {
-            assert!(
-                (d - (diameter + 2.0 * radial + compound)).abs() < 1e-6,
-                "{d}"
-            );
+            assert!(*d >= contact - 1e-6 && *d <= contact + 0.5, "{d}");
         }
+    }
+
+    #[test]
+    fn loose_end_cells_roll_off_the_row_onto_the_floor() {
+        use crate::project::{box_enclosure, default_config, default_tolerance_stack};
+        let mut stack = default_tolerance_stack();
+        for layer in &mut stack {
+            if layer.application == ToleranceApplication::BetweenRows {
+                layer.thickness_mm = 0.0;
+            }
+        }
+        let mut config = default_config();
+        config.enclosure = box_enclosure(400.0, 200.0, 60.0);
+        config.pack.orientation = OrientationRequest::Y;
+        config.pack.packing_modes = vec![PackingMode::Staggered];
+        config.pack.tolerance_stack = stack;
+        let cell = crate::library::cell(&config.pack.cell_id).clone();
+        let response = enumerate_pack_plans(&EnumerationRequest {
+            config,
+            cell: cell.clone(),
+        })
+        .unwrap();
+        let plan = response
+            .plans
+            .iter()
+            .find(|plan| plan.stagger_row_axis == Some(Axis::Z) && plan.metrics.layer_count == 2)
+            .expect("a two-layer staggered plan");
+        let lower_z = plan
+            .cells
+            .iter()
+            .filter(|c| c.layer == 0)
+            .map(|c| c.position[2])
+            .fold(f64::NEG_INFINITY, f64::max);
+        // The upper cell past the last lower one has a single support and
+        // rolls down to the floor beside the row; the others stay nested.
+        let on_floor = plan
+            .cells
+            .iter()
+            .filter(|c| c.layer == 1 && (c.position[2] - lower_z).abs() < 1e-6)
+            .count();
+        let nested = plan
+            .cells
+            .iter()
+            .filter(|c| c.layer == 1 && c.position[2] > lower_z + 10.0)
+            .count();
+        assert!(on_floor >= 1, "no upper cell rolled onto the floor");
+        assert!(nested >= 1, "nested cells should stay in their valleys");
+        assert_eq!(
+            on_floor + nested,
+            plan.cells.iter().filter(|c| c.layer == 1).count()
+        );
     }
 
     #[test]
