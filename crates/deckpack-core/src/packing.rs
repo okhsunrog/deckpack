@@ -823,7 +823,14 @@ fn profile_placements(request: &ProfilePlacementRequest<'_>) -> (Vec<ProfilePlac
         .into_iter()
         .map(|(x, anchor)| {
             let candidate = feasible.iter().find(|item| item.x == x).unwrap();
-            let (mut cell_z, mut cell_shift) = draper.slide_edge_columns(x, &candidate.cell_z);
+            // The edge-column slide exists to keep a vertically draped upper
+            // row down; loose upper cells roll into the real valley instead,
+            // so the bottom row stays on its lattice pitch (the cradle holds
+            // it there) and no artificial gap opens beside a ramp.
+            let (mut cell_z, mut cell_shift) = match &request.loose {
+                Some(_) => (candidate.cell_z.clone(), vec![0.0; candidate.cell_z.len()]),
+                None => draper.slide_edge_columns(x, &candidate.cell_z),
+            };
             if let Some(loose) = &request.loose {
                 settle_loose_cells(
                     loose,
@@ -915,24 +922,38 @@ fn settle_loose_cells(
             let mut moved = false;
             for &i in &movers {
                 let t0 = position(i, shift);
+                // Neighbours below the centre carry the cell (their arcs are
+                // its floor); a neighbour above it, e.g. one that rolled onto
+                // its flank, is a ceiling it cannot lift, only be blocked by.
                 let rest = |t: f64| {
                     let mut h = floor(i, t - cells[i][lateral]);
                     if !h.is_finite() {
                         return f64::INFINITY;
                     }
+                    let mut ceiling = f64::INFINITY;
                     for &j in members {
                         if j == i {
                             continue;
                         }
                         let dt = t - position(j, shift);
                         if dt.abs() < contact_mm {
-                            h = h.max(cell_z[j] + (contact_mm * contact_mm - dt * dt).sqrt());
+                            let arc = (contact_mm * contact_mm - dt * dt).sqrt();
+                            if cell_z[j] > cell_z[i] + 1e-9 {
+                                ceiling = ceiling.min(cell_z[j] - arc);
+                            } else {
+                                h = h.max(cell_z[j] + arc);
+                            }
                         }
+                    }
+                    if h > ceiling + 1e-9 {
+                        return f64::INFINITY;
                     }
                     h
                 };
                 let (t, z) = roll_downhill(&rest, t0);
-                if !z.is_finite() {
+                // Rolling only ever lowers a cell; a neighbour that came to
+                // rest against it cannot push it up.
+                if !z.is_finite() || z > cell_z[i] + 1e-9 {
                     continue;
                 }
                 if (t - t0).abs() > 1e-6 || (z - cell_z[i]).abs() > 1e-6 {
