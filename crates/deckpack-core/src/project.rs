@@ -172,6 +172,7 @@ pub fn default_config() -> PlannerConfig {
                     ..reservation
                 })
                 .collect(),
+            level_upper_rows: false,
         },
     }
 }

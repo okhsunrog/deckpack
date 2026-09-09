@@ -23,7 +23,7 @@ fn plan_prints_the_default_project_summary() {
         "{text}"
     );
     assert!(text.contains("534 explored, 2 fit"), "{text}");
-    assert!(text.contains("layout-1-2028964347"), "{text}");
+    assert!(text.contains("layout-1-462436801"), "{text}");
 }
 
 #[test]

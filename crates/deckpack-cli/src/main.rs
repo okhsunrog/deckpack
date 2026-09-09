@@ -81,6 +81,10 @@ struct ConfigArgs {
     /// Maximum lattice layers.
     #[arg(long)]
     max_layers: Option<u32>,
+    /// Loose staggered lattices (no spacer wall): slide a ramp-lifted end cell
+    /// of the bottom row outward until the upper row comes out level.
+    #[arg(long)]
+    level: bool,
     /// Target centre of mass along the deck, millimetres from the middle.
     #[arg(long)]
     target_com: Option<f64>,
@@ -341,6 +345,9 @@ fn build_config(args: &ConfigArgs) -> Result<PlannerConfig> {
     }
     if let Some(layers) = args.max_layers {
         config.pack.max_layers = layers;
+    }
+    if args.level {
+        config.pack.level_upper_rows = true;
     }
     if let Some(target) = args.target_com {
         config.pack.target_center_of_mass_x_mm = target;

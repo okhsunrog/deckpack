@@ -20,7 +20,16 @@ fn round_trip<T: DeserializeOwned + Serialize>(value: &Value, path: &str) -> T {
 #[test]
 fn enumerate_fixtures_round_trip() {
     for (name, fixture) in fixtures("enumerate") {
-        round_trip::<EnumerationRequest>(&fixture["request"], &format!("{name}.request"));
+        // `levelUpperRows` was added after the fixtures were recorded; the
+        // recorded requests must still parse and serialise back unchanged.
+        let request: EnumerationRequest = serde_json::from_value(fixture["request"].clone())
+            .unwrap_or_else(|error| panic!("{name}.request: does not deserialize: {error}"));
+        let mut back = serde_json::to_value(&request).unwrap();
+        back["config"]["pack"]
+            .as_object_mut()
+            .unwrap()
+            .remove("levelUpperRows");
+        assert_close(&fixture["request"], &back, &format!("{name}.request"));
         round_trip::<EnumerationResponse>(&fixture["response"], &format!("{name}.response"));
     }
 }

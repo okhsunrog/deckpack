@@ -361,6 +361,16 @@ export function ControlPanel({ config }: { config: PlannerConfig }) {
           max={8}
           onChange={(value) => setPackField("maxLayers", Math.round(value))}
         />
+        <div className="check-row">
+          <label title="Без спейсеров: крайнюю нижнюю банку, поднятую скатом, сдвигать наружу по скату, пока верхняя, что на ней лежит, не встанет вровень с остальным рядом">
+            <input
+              type="checkbox"
+              checked={config.pack.levelUpperRows ?? false}
+              onChange={(event) => setPackField("levelUpperRows", event.currentTarget.checked)}
+            />
+            Выравнивать верхний ряд
+          </label>
+        </div>
       </section>
 
       <section className="control-section">

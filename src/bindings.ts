@@ -303,6 +303,12 @@ export type PackRequest = {
 	toleranceStack: ToleranceLayer[],
 	wiringExitMode: WiringExitMode,
 	serviceReservations: ServiceReservation[],
+	/**
+	 *  Loose staggered lattices only: slide an end cell of the bottom row
+	 *  that a ramp lifted outward along the ramp until the upper cell resting
+	 *  on it comes down level with the rest of its row.
+	 */
+	levelUpperRows?: boolean,
 };
 
 export type PackingMode = "brick" | "staggered";

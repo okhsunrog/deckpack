@@ -374,6 +374,9 @@ struct ProfilePlacementRequest<'a> {
     /// Loose cells: nothing holds the upper rows, so after draping they roll
     /// along whatever they rest on (see `settle_loose_cells`).
     loose: Option<LooseCells<'a>>,
+    /// With loose cells, still slide ramp-lifted end cells of the bottom row
+    /// outward so the upper row comes out level (`PackRequest::level_upper_rows`).
+    level: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -495,20 +498,25 @@ impl Draper<'_> {
     /// A bottom edge column pushed up by a ramp may instead slide outward
     /// along it: once its lateral distance to the upper row reaches the
     /// lattice touch distance the upper cells stay down, something the greedy
-    /// drape cannot express. Only lattices whose stagger step runs along the
-    /// deck can relax this way (a cylinder sliding along its own axis never
-    /// clears its neighbours), and only when every affected upper cell keeps
-    /// another support to rest on.
-    fn slide_edge_columns(&self, x: f64, base_z: &[f64]) -> (Vec<f64>, Vec<f64>) {
+    /// drape cannot express. The shift is refined so the upper cell ends up
+    /// exactly level with its row, touching both the slid cell and its inner
+    /// neighbour, and only when every affected upper cell keeps another
+    /// support to rest on. Held lattices (the legacy drape) only relax along
+    /// the deck; loose lattices may slide along either lateral axis.
+    fn slide_edge_columns(&self, x: f64, base_z: &[f64], any_axis: bool) -> (Vec<f64>, Vec<f64>) {
         let cells = self.request.local_cells;
         let mut dx = vec![0.0; cells.len()];
-        if self.request.rigid || self.request.axial_index == 0 || self.layer_count < 2 {
+        if self.request.rigid
+            || self.layer_count < 2
+            || (self.request.axial_index == 0 && !any_axis)
+        {
             return (base_z.to_vec(), dx);
         }
+        let lateral = if self.request.axial_index == 0 { 1 } else { 0 };
         let mut cell_z = base_z.to_vec();
         let bottom = &self.by_layer[0];
         for dir in [-1.0, 1.0] {
-            let edge_x = bottom.iter().map(|&index| cells[index][0]).fold(
+            let edge_x = bottom.iter().map(|&index| cells[index][lateral]).fold(
                 if dir < 0.0 {
                     f64::INFINITY
                 } else {
@@ -521,7 +529,7 @@ impl Draper<'_> {
             let column: Vec<usize> = bottom
                 .iter()
                 .copied()
-                .filter(|&index| (cells[index][0] - edge_x).abs() < 1e-6)
+                .filter(|&index| (cells[index][lateral] - edge_x).abs() < 1e-6)
                 .collect();
             let in_column = |index: usize| column.contains(&index);
             let mut dependents: Vec<(usize, Support)> = Vec::new();
@@ -571,13 +579,15 @@ impl Draper<'_> {
             if !pushes {
                 continue;
             }
-            let mut shift = SLIDE_STEP_MM;
-            'search: while shift <= SLIDE_MAX_MM + EPSILON {
+            // Slide the column outward: `None` when the floor ends or the
+            // lid is hit, otherwise the column heights and whether every
+            // dependent upper cell can now rest at its base height.
+            let attempt = |shift: f64| -> Option<(Vec<(usize, f64)>, bool)> {
                 let mut slid_z: Vec<(usize, f64)> = Vec::with_capacity(column.len());
                 for &index in &column {
                     let floor_z = self.own_floor(index, x, dir * shift);
                     if !floor_z.is_finite() || floor_z > self.top_limit_z {
-                        break 'search;
+                        return None;
                     }
                     slid_z.push((index, floor_z));
                 }
@@ -597,17 +607,43 @@ impl Draper<'_> {
                     slid_of(pair.lower) + rise
                         <= base_of(*upper).unwrap_or(f64::NEG_INFINITY) + EPSILON
                 });
-                if clears {
-                    for (index, z) in &slid_z {
-                        dx[*index] = dir * shift;
-                        cell_z[*index] = *z;
+                Some((slid_z, clears))
+            };
+            let mut shift = SLIDE_STEP_MM;
+            let mut found = None;
+            while shift <= SLIDE_MAX_MM + EPSILON {
+                match attempt(shift) {
+                    None => break,
+                    Some((slid_z, true)) => {
+                        found = Some((shift, slid_z));
+                        break;
                     }
-                    for (upper, base) in &upper_base {
-                        cell_z[*upper] = *base;
-                    }
-                    break;
+                    Some((_, false)) => shift += SLIDE_STEP_MM,
                 }
-                shift += SLIDE_STEP_MM;
+            }
+            let Some((mut hi, mut slid_z)) = found else {
+                continue;
+            };
+            // Bisect back towards the last non-clearing shift so the upper
+            // cell touches the slid column instead of hovering above a gap
+            // it would roll into.
+            let mut lo = hi - SLIDE_STEP_MM;
+            for _ in 0..12 {
+                let mid = (lo + hi) / 2.0;
+                match attempt(mid) {
+                    Some((z, true)) => {
+                        hi = mid;
+                        slid_z = z;
+                    }
+                    _ => lo = mid,
+                }
+            }
+            for (index, z) in &slid_z {
+                dx[*index] = dir * hi;
+                cell_z[*index] = *z;
+            }
+            for (upper, base) in &upper_base {
+                cell_z[*upper] = *base;
             }
         }
         (cell_z, dx)
@@ -823,13 +859,17 @@ fn profile_placements(request: &ProfilePlacementRequest<'_>) -> (Vec<ProfilePlac
         .into_iter()
         .map(|(x, anchor)| {
             let candidate = feasible.iter().find(|item| item.x == x).unwrap();
-            // The edge-column slide exists to keep a vertically draped upper
-            // row down; loose upper cells roll into the real valley instead,
-            // so the bottom row stays on its lattice pitch (the cradle holds
-            // it there) and no artificial gap opens beside a ramp.
-            let (mut cell_z, mut cell_shift) = match &request.loose {
-                Some(_) => (candidate.cell_z.clone(), vec![0.0; candidate.cell_z.len()]),
-                None => draper.slide_edge_columns(x, &candidate.cell_z),
+            // The edge-column slide keeps a vertically draped upper row down.
+            // Loose upper cells roll into the real valley instead, so their
+            // bottom row stays on its lattice pitch (the cradle holds it
+            // there) unless the user asked for a level upper row, in which
+            // case the ramp-lifted end cell slides out until the upper cell
+            // on it comes down to the row height.
+            let slide = request.loose.is_none() || request.level;
+            let (mut cell_z, mut cell_shift) = if slide {
+                draper.slide_edge_columns(x, &candidate.cell_z, request.loose.is_some())
+            } else {
+                (candidate.cell_z.clone(), vec![0.0; candidate.cell_z.len()])
             };
             if let Some(loose) = &request.loose {
                 settle_loose_cells(
@@ -1586,6 +1626,7 @@ fn candidate_placements(
                 rigid: mode == PackingMode::Brick,
                 floor_mm: tolerance.floor,
                 loose,
+                level: context.config.pack.level_upper_rows,
             })
         }
     }
@@ -1919,6 +1960,52 @@ mod tests {
             on_floor + nested,
             plan.cells.iter().filter(|c| c.layer == 1).count()
         );
+    }
+
+    /// z of every upper cell of the tail-anchored Spark plan without spacers.
+    fn spark_upper_row(level: bool) -> Vec<f64> {
+        use crate::project::default_config;
+        let mut config = default_config();
+        config.pack.orientation = OrientationRequest::Y;
+        config.pack.packing_modes = vec![PackingMode::Staggered];
+        config.pack.level_upper_rows = level;
+        for layer in &mut config.pack.tolerance_stack {
+            if layer.application == ToleranceApplication::BetweenRows {
+                layer.thickness_mm = 0.0;
+            }
+        }
+        let cell = crate::library::cell(&config.pack.cell_id).clone();
+        let response = enumerate_pack_plans(&EnumerationRequest { config, cell }).unwrap();
+        let plan = response
+            .plans
+            .iter()
+            .find(|plan| plan.anchor == PlacementAnchor::Tail)
+            .expect("tail plan");
+        plan.cells
+            .iter()
+            .filter(|c| c.layer == 1)
+            .map(|c| c.position[2])
+            .collect()
+    }
+
+    #[test]
+    fn leveling_slides_the_ramp_cell_until_the_upper_row_is_flat() {
+        fn spread(zs: &[f64]) -> f64 {
+            // Ignore the cell past the row end that rolled down to the floor.
+            let mut sorted = zs.to_vec();
+            sorted.sort_by(f64::total_cmp);
+            let median = sorted[sorted.len() / 2];
+            zs.iter()
+                .filter(|z| **z > median - 3.0)
+                .map(|z| (z - median).abs())
+                .fold(0.0, f64::max)
+        }
+        let wedged = spread(&spark_upper_row(false));
+        let level = spread(&spark_upper_row(true));
+        assert!(wedged > 1.0, "the ramp should wedge a cell up: {wedged}");
+        // The slid cell rests on a height map quantised to 0.25 mm, so the
+        // levelled cell can end up a fraction of a millimetre low, never high.
+        assert!(level < 0.6, "levelled row spread {level}");
     }
 
     #[test]

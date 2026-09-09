@@ -56,6 +56,7 @@ const packSchema = z.object({
   orientation: z.enum(["auto", "x", "y", "z"]),
   packingModes: z.array(z.enum(["brick", "staggered"])).min(1),
   maxLayers: z.number().int().min(1).max(8),
+  levelUpperRows: z.boolean().default(false),
   targetCenterOfMassXmm: z.number(),
   toleranceStack: z.array(toleranceLayerSchema),
   wiringExitMode: z.enum(["combined", "separate"]),

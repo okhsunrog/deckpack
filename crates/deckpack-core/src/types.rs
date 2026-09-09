@@ -324,6 +324,11 @@ pub struct PackRequest {
     pub tolerance_stack: Vec<ToleranceLayer>,
     pub wiring_exit_mode: WiringExitMode,
     pub service_reservations: Vec<ServiceReservation>,
+    /// Loose staggered lattices only: slide an end cell of the bottom row
+    /// that a ramp lifted outward along the ramp until the upper cell resting
+    /// on it comes down level with the rest of its row.
+    #[serde(default)]
+    pub level_upper_rows: bool,
 }
 
 #[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
