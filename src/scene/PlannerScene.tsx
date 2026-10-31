@@ -676,7 +676,7 @@ function ComponentObjects({
       dimensionsMm: component.dimensionsMm,
       color: "#839099",
     };
-    const renderedSpec = spec ?? fallbackSpec;
+    const renderedSpec = spec ? { ...spec, dimensionsMm: component.dimensionsMm } : fallbackSpec;
     const rotationZ = (component.rotationDeg * Math.PI) / 180;
     const rotationTilt = (component.tiltDeg * Math.PI) / 180;
     return (

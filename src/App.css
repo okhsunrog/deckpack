@@ -1062,6 +1062,16 @@
   box-shadow: 0 0 8px var(--danger);
 }
 
+.scene-status.pending {
+  border-color: var(--line);
+  color: var(--text-dim);
+}
+
+.scene-status.pending > span {
+  background: var(--text-dim);
+  box-shadow: none;
+}
+
 .keepout-editor {
   position: absolute;
   top: 12px;
@@ -1689,6 +1699,21 @@
   border-color: var(--danger);
   color: #f08b91;
   background: rgb(255 91 100 / 8%);
+}
+
+.placement-state.pending {
+  border-color: var(--line);
+  color: var(--text-dim);
+  background: transparent;
+}
+
+.collision-dot.pending {
+  background: var(--text-dim);
+  box-shadow: none;
+}
+
+.placed-row em.pending {
+  color: var(--text-dim);
 }
 
 .two-column-fields {

@@ -47,9 +47,9 @@ export const commands = {
 	rotationDeg: number,
 } | null, string>(__TAURI_INVOKE("suggest_placement", { enclosure, plan: ({...plan,cellSizeMm:plan.cellSizeMm.map(i=>i),cells:plan.cells.map(i=>({...i,position:i.position.map(i=>i)})),groups:plan.groups.map(i=>({...i,center:i.center.map(i=>i)})),seriesPath:plan.seriesPath.map(i=>i.map(i=>i)),blocks:plan.blocks.map(i=>({...i,envelope:({...i.envelope,min:i.envelope.min.map(i=>i),max:i.envelope.max.map(i=>i)})})),serviceVolumes:plan.serviceVolumes.map(i=>({...i,box:({...i.box,min:i.box.min.map(i=>i),max:i.box.max.map(i=>i)})})),bounds:({...plan.bounds,min:plan.bounds.min.map(i=>i),max:plan.bounds.max.map(i=>i)}),metrics:({...plan.metrics,largestFreeBox:({...plan.metrics.largestFreeBox,box:({...plan.metrics.largestFreeBox.box,min:plan.metrics.largestFreeBox.box.min.map(i=>i),max:plan.metrics.largestFreeBox.box.max.map(i=>i)})})})}), existing: existing.map(i=>({...i,position:i.position.map(i=>i)})), dimensions })).then((v) => ((v.status === "ok" ? { ...v, data: v.data==null?v.data:({...v.data,position:v.data.position.map(i=>i)}) } : v) as typeof v)),
 	/**  Read and validate a project file, recording it as recently used. */
-	loadProject: (path: string) => typedError<ProjectFile, string>(__TAURI_INVOKE("load_project", { path })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,config:({...v.data.config,pack:({...v.data.config.pack,toleranceStack:v.data.config.pack.toleranceStack.map(i=>i),serviceReservations:v.data.config.pack.serviceReservations.map(i=>({...i,sizeMm:i.sizeMm.map(i=>i),offsetMm:i.offsetMm==null?i.offsetMm:i.offsetMm.map(i=>i)}))})}),components:v.data.components.map(i=>({...i,position:i.position.map(i=>i)}))}) } : v) as typeof v)),
+	loadProject: (path: string) => typedError<ProjectFile, string>(__TAURI_INVOKE("load_project", { path })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,config:({...v.data.config,pack:({...v.data.config.pack,toleranceStack:v.data.config.pack.toleranceStack.map(i=>i),serviceReservations:v.data.config.pack.serviceReservations.map(i=>({...i,sizeMm:i.sizeMm.map(i=>i),offsetMm:i.offsetMm==null?i.offsetMm:i.offsetMm.map(i=>i)}))})}),components:v.data.components.map(i=>({...i,position:i.position.map(i=>i)})),holderOptions:v.data.holderOptions==null?v.data.holderOptions:v.data.holderOptions}) } : v) as typeof v)),
 	/**  Write a project file (pretty JSON) and record it as recently used. */
-	saveProject: (path: string, project: ProjectFile) => typedError<null, string>(__TAURI_INVOKE("save_project", { path, project: ({...project,config:({...project.config,pack:({...project.config.pack,toleranceStack:project.config.pack.toleranceStack.map(i=>i),serviceReservations:project.config.pack.serviceReservations.map(i=>({...i,sizeMm:i.sizeMm.map(i=>i),offsetMm:i.offsetMm==null?i.offsetMm:i.offsetMm.map(i=>i)}))})}),components:project.components.map(i=>({...i,position:i.position.map(i=>i)}))}) })),
+	saveProject: (path: string, project: ProjectFile) => typedError<null, string>(__TAURI_INVOKE("save_project", { path, project: ({...project,config:({...project.config,pack:({...project.config.pack,toleranceStack:project.config.pack.toleranceStack.map(i=>i),serviceReservations:project.config.pack.serviceReservations.map(i=>({...i,sizeMm:i.sizeMm.map(i=>i),offsetMm:i.offsetMm==null?i.offsetMm:i.offsetMm.map(i=>i)}))})}),components:project.components.map(i=>({...i,position:i.position.map(i=>i)})),holderOptions:project.holderOptions==null?project.holderOptions:project.holderOptions}) })),
 	/**  Recently opened projects that still exist on disk, newest first. */
 	recentProjects: () => __TAURI_INVOKE<RecentProject[]>("recent_projects"),
 	forgetProject: (path: string) => typedError<null, string>(__TAURI_INVOKE("forget_project", { path })),
@@ -181,7 +181,7 @@ export type HeightMapAsset = {
 
 export type HeightMapKind = "mesh-heightmap";
 
-/**  CSG settings the app exposes for the printable holder. */
+/**  CSG settings shared by project files and the desktop export commands. */
 export type HolderCsg = {
 	/**  End rails with screw holes (8 mm rails, 3.2 mm holes). */
 	rails: boolean,
@@ -331,6 +331,10 @@ export type ProjectFile = {
 	schemaVersion: number,
 	config: PlannerConfig,
 	components?: ComponentPlacement[],
+	/**  Lattice signature, independent of the generated plan id and ranking. */
+	selectedPlanKey?: string | null,
+	holderOptions?: HolderOptions | null,
+	holderCsg?: HolderCsg | null,
 };
 
 export type RecentProject = {

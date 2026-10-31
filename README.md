@@ -1,23 +1,17 @@
 # Deckpack
 
-Desktop-first 3D planner for electric-longboard enclosure internals. It exhaustively enumerates geometric layouts for an `nSmP` cylindrical-cell pack, ranks feasible variants, and lets the user place ESC, BMS, antispark, and custom blocks inside the enclosure.
+Desktop 3D planner for electric-longboard enclosure internals. It exhaustively enumerates geometric layouts for an `nSmP` cylindrical-cell pack, ranks feasible variants, and lets the user place ESC, BMS, antispark, and custom blocks inside the enclosure.
 
-The app is a static frontend wrapped in a [Tauri 2](https://tauri.app) desktop shell. Project inputs and placed components stay in `localStorage` and can be exported as JSON; in the desktop build exports go through the native "Save as" dialog.
+The app runs in a [Tauri 2.12](https://tauri.app) desktop shell; its React frontend calls the Rust engine through Tauri IPC. A standalone browser is not supported. The working project stays in `localStorage`; project files include the inputs, placed components, chosen layout signature, and holder settings, and are opened and saved through native dialogs. Older schema-2 project files remain readable, with default holder settings and the highest-ranked layout selected.
 
 ## Development
 
-Browser-only workflow:
+Development needs a Rust toolchain and the [Tauri system prerequisites](https://tauri.app/start/prerequisites/):
 
 ```bash
 vp install
-vp dev
-```
-
-Desktop app (needs a Rust toolchain and the [Tauri system prerequisites](https://tauri.app/start/prerequisites/)):
-
-```bash
 vp run tauri dev     # dev server + native window with hot reload
-vp run tauri build   # release binary and installers in src-tauri/target/release/bundle
+vp run tauri build   # release binary and installers in target/release/bundle
 ```
 
 Validation:
@@ -84,7 +78,7 @@ claude mcp add --scope user tauri -- npx -y @hypothesi/tauri-mcp-server
 
 Then run `vp run tauri dev` and use the `tauri` MCP tools. The bridge needs `app.withGlobalTauri` in `tauri.conf.json`, which is why it is enabled.
 
-The Rust crates track the unreleased tauri `dev` branch through `[patch.crates-io]` in `src-tauri/Cargo.toml`: it pulls tao 0.37 / wry 0.56 with the Wayland server-side-decoration fixes. Run `cargo update --manifest-path src-tauri/Cargo.toml` to move to a newer `dev` commit.
+The Rust runtime and JavaScript API/CLI use stable Tauri 2.12 releases. The runtime is resolved from crates.io, with no overrides pointing to the Tauri `dev` branch.
 
 ## Geometry model
 

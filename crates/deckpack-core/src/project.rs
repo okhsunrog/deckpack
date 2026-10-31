@@ -21,6 +21,16 @@ pub struct ProjectFile {
     pub config: PlannerConfig,
     #[serde(default)]
     pub components: Vec<ComponentPlacement>,
+    /// Lattice signature, independent of the generated plan id and ranking.
+    #[serde(default)]
+    #[specta(optional)]
+    pub selected_plan_key: Option<String>,
+    #[serde(default)]
+    #[specta(optional)]
+    pub holder_options: Option<HolderOptions>,
+    #[serde(default)]
+    #[specta(optional)]
+    pub holder_csg: Option<HolderCsg>,
 }
 
 impl ProjectFile {
@@ -29,6 +39,9 @@ impl ProjectFile {
             schema_version: PROJECT_SCHEMA_VERSION,
             config,
             components,
+            selected_plan_key: None,
+            holder_options: None,
+            holder_csg: None,
         }
     }
 }
@@ -180,6 +193,30 @@ pub fn default_config() -> PlannerConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn project_settings_round_trip_and_old_files_still_load() {
+        let mut project = ProjectFile::new(default_config(), Vec::new());
+        project.selected_plan_key = Some("staggered|y|z|3x1x1|12x1x1|center".into());
+        project.holder_options = Some(HolderOptions {
+            style: HolderStyle::Edge,
+            ..HolderOptions::default()
+        });
+        project.holder_csg = Some(HolderCsg { rails: true });
+        let mut json = serde_json::to_value(&project).unwrap();
+        assert_eq!(
+            serde_json::from_value::<ProjectFile>(json.clone()).unwrap(),
+            project
+        );
+        for key in ["selectedPlanKey", "holderOptions", "holderCsg"] {
+            json.as_object_mut().unwrap().remove(key);
+        }
+        let old: ProjectFile = serde_json::from_value(json).unwrap();
+        assert!(old.selected_plan_key.is_none());
+        assert!(old.holder_options.is_none());
+        assert!(old.holder_csg.is_none());
+        assert_eq!(old.config, project.config);
+    }
 
     #[test]
     fn default_config_matches_the_recorded_app_default() {

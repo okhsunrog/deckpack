@@ -4,12 +4,12 @@ use deckpack_core::Dimensions3D;
 use deckpack_core::placement::PlacementSuggestion;
 use deckpack_core::{
     CellSpec, ComponentPlacement, ComponentSpec, EnclosureSpec, EnumerationRequest,
-    EnumerationResponse, HeightMapAsset, HolderOptions, HolderPieceSummary, PackPlan,
+    EnumerationResponse, HeightMapAsset, HolderCsg, HolderOptions, HolderPieceSummary, PackPlan,
     PlannerConfig, ToleranceLayer, WorkspaceEvaluation, assets, geometry, holder, library, packing,
     placement,
 };
 use deckpack_mesh::{CsgOptions, assembled_positions, build_holder, layout_stl};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use specta::Type;
 
 /// What a new project starts from; the single source of the default
@@ -72,20 +72,10 @@ pub struct HolderExport {
     pub path: String,
 }
 
-/// CSG settings the app exposes for the printable holder.
-#[derive(Deserialize, Type, Clone, Copy, Debug, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct HolderCsg {
-    /// End rails with screw holes (8 mm rails, 3.2 mm holes).
-    pub rails: bool,
-}
-
-impl HolderCsg {
-    fn options(self) -> CsgOptions {
-        CsgOptions {
-            rail_width_mm: if self.rails { 8.0 } else { 0.0 },
-            ..CsgOptions::default()
-        }
+fn csg_options(csg: HolderCsg) -> CsgOptions {
+    CsgOptions {
+        rail_width_mm: if csg.rails { 8.0 } else { 0.0 },
+        ..CsgOptions::default()
     }
 }
 
@@ -108,7 +98,7 @@ pub async fn export_holder_stl(
                 .map_err(|error| error.to_string())?;
         // Profile summaries carry the wall-thickness check; the bytes come from CSG.
         let summary = holder::build_stl(&layout.pieces, &options);
-        let built = build_holder(&layout, &csg.options()).map_err(|error| error.to_string())?;
+        let built = build_holder(&layout, &csg_options(csg)).map_err(|error| error.to_string())?;
         let stl = layout_stl(&built, options.layout_gap_mm);
         std::fs::write(&path, &stl).map_err(|error| format!("cannot write {path}: {error}"))?;
         Ok(HolderExport {
@@ -140,7 +130,7 @@ pub fn holder_mesh(
     let layout =
         holder::compute_holder_pieces(&plan, &cell, &tolerance_stack, &enclosure, &options)
             .map_err(|error| error.to_string())?;
-    let built = build_holder(&layout, &csg.options()).map_err(|error| error.to_string())?;
+    let built = build_holder(&layout, &csg_options(csg)).map_err(|error| error.to_string())?;
     let positions = assembled_positions(&layout, &built);
     let mut bytes = Vec::with_capacity(positions.len() * 4);
     for value in positions {

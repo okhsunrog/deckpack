@@ -18,9 +18,6 @@ pub struct CsgOptions {
     pub rail_width_mm: f64,
     /// Screw hole through each rail along the pack height; 0 = no holes.
     pub screw_diameter_mm: f64,
-    /// Interior columns thinner than this are thickened so the outline stays
-    /// a single simple polygon.
-    pub min_web_mm: f64,
     /// Facets of the screw holes.
     pub segments: i32,
 }
@@ -30,7 +27,6 @@ impl Default for CsgOptions {
         Self {
             rail_width_mm: 8.0,
             screw_diameter_mm: 3.2,
-            min_web_mm: 0.8,
             segments: 32,
         }
     }
@@ -60,31 +56,41 @@ pub struct CsgPiece {
 }
 
 /// Outline of the profile in the print frame: x = t − t₀, y = z − z_base.
-fn outline(piece: &ProfilePiece, min_web: f64) -> Result<Polygons, CsgError> {
+fn outline(piece: &ProfilePiece) -> Result<Polygons, CsgError> {
     let n = piece.t.len();
     if n < 2 {
         return Err(CsgError::Degenerate(piece.label.clone()));
     }
     let t0 = piece.t[0];
     let z_base = piece.bottom.iter().copied().fold(f64::INFINITY, f64::min);
-    let mut polygon: Vec<Vec2> = Vec::with_capacity(2 * n);
-    for i in 0..n {
-        polygon.push(Vec2::new(piece.t[i] - t0, piece.bottom[i] - z_base));
+    let thickness = |i: usize| piece.top[i] - piece.bottom[i];
+    let mut polygons = Vec::new();
+    let mut start = 0;
+    while start + 1 < n {
+        // A zero-thickness stretch is a cell cutout, not a web to fill in.
+        // Split it into separate outlines instead of adding material inside
+        // the bores just to keep a single polygon connected.
+        while start + 1 < n && thickness(start) <= 0.0 && thickness(start + 1) <= 0.0 {
+            start += 1;
+        }
+        if start + 1 == n {
+            break;
+        }
+        let mut end = start + 1;
+        while end + 1 < n && thickness(end) > 0.0 {
+            end += 1;
+        }
+        let mut polygon = Vec::with_capacity(2 * (end - start + 1));
+        for i in start..=end {
+            polygon.push(Vec2::new(piece.t[i] - t0, piece.bottom[i] - z_base));
+        }
+        for i in (start..=end).rev() {
+            polygon.push(Vec2::new(piece.t[i] - t0, piece.top[i] - z_base));
+        }
+        polygons.push(polygon);
+        start = end;
     }
-    for i in (0..n).rev() {
-        let top = piece.top[i].max(piece.bottom[i] + min_web);
-        polygon.push(Vec2::new(piece.t[i] - t0, top - z_base));
-    }
-    // Counter-clockwise outline for a positive fill.
-    let area: f64 = polygon
-        .iter()
-        .zip(polygon.iter().cycle().skip(1))
-        .map(|(a, b)| a.x * b.y - b.x * a.y)
-        .sum();
-    if area < 0.0 {
-        polygon.reverse();
-    }
-    Ok(vec![polygon])
+    Ok(polygons)
 }
 
 fn check(label: &str, solid: Manifold) -> Result<Manifold, CsgError> {
@@ -98,8 +104,8 @@ fn check(label: &str, solid: Manifold) -> Result<Manifold, CsgError> {
 }
 
 /// The plain extruded profile.
-pub fn piece_solid(piece: &ProfilePiece, options: &CsgOptions) -> Result<Manifold, CsgError> {
-    let polygon = outline(piece, options.min_web_mm)?;
+pub fn piece_solid(piece: &ProfilePiece) -> Result<Manifold, CsgError> {
+    let polygon = outline(piece)?;
     check(
         &piece.label,
         Manifold::extrude(&polygon, piece.length_mm, 0, 0.0, Vec2::new(1.0, 1.0)),
@@ -144,7 +150,7 @@ pub fn piece_with_rails(
     options: &CsgOptions,
     span: Option<RailSpan>,
 ) -> Result<Manifold, CsgError> {
-    let mut solid = piece_solid(piece, options)?;
+    let mut solid = piece_solid(piece)?;
     if options.rail_width_mm <= 0.0 {
         return Ok(solid);
     }
@@ -254,9 +260,20 @@ mod tests {
 
     #[test]
     fn extruded_slab_has_the_expected_volume() {
-        let solid = piece_solid(&slab(), &CsgOptions::default()).unwrap();
+        let solid = piece_solid(&slab()).unwrap();
         assert!((solid.volume() - 30.0 * 5.0 * 12.0).abs() < 1e-6);
         assert_eq!(solid.genus(), 0);
+    }
+
+    #[test]
+    fn cutouts_split_the_profile_without_adding_a_web() {
+        let piece = ProfilePiece {
+            top: vec![5.0, 0.0, 0.0, 5.0],
+            ..slab()
+        };
+        let solid = piece_solid(&piece).unwrap();
+        // Two triangular prisms, with the middle 10 mm left empty.
+        assert!((solid.volume() - 2.0 * 10.0 * 5.0 / 2.0 * 12.0).abs() < 1e-6);
     }
 
     #[test]

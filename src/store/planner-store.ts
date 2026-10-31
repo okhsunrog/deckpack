@@ -89,14 +89,18 @@ export const usePlannerStore = create<PlannerState>()(
       holderCsg: { rails: false },
       setProjectPath: (projectPath) => set({ projectPath }),
       loadProject: (project, projectPath) => {
-        const config = sanitizePersistedConfig(project.config);
+        const config = sanitizePersistedConfig(project.config, {
+          spacers: legacySpacers(project.holderOptions),
+        });
         if (!config) return false;
         set({
           config,
           placements: sanitizePersistedPlacements(project.components) ?? [],
           projectPath,
           selectedPlanId: undefined,
-          selectedPlanKey: undefined,
+          selectedPlanKey: project.selectedPlanKey ?? undefined,
+          holderOptions: sanitizeHolderOptions(project.holderOptions, undefined),
+          holderCsg: project.holderCsg ?? { rails: false },
           selectedComponentId: undefined,
           rightPanel: "variants",
         });
@@ -256,6 +260,8 @@ export const usePlannerStore = create<PlannerState>()(
           selectedComponentId: undefined,
           rightPanel: "variants",
           projectPath: undefined,
+          holderOptions: DEFAULT_HOLDER_OPTIONS,
+          holderCsg: { rails: false },
         }),
     }),
     {

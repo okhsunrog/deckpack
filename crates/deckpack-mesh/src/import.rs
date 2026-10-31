@@ -69,6 +69,15 @@ pub fn import_triangles(
     // App X runs along the deck (source Y), app Y across it (source X).
     let length = max[1] - min[1];
     let width = max[0] - min[0];
+    // Depth is measured from the opening, regardless of where the modeller
+    // placed the tray in source coordinates. Keep the source winding for
+    // the inward-face filter used by the sampler.
+    let normalized: Vec<Triangle> = triangles
+        .iter()
+        .map(|triangle| Triangle {
+            vertices: triangle.vertices.map(|v| [v[0], v[1], v[2] - min[2]]),
+        })
+        .collect();
 
     let step = options.depth.step_mm;
     let columns = (length / step).ceil() as usize + 1;
@@ -78,7 +87,7 @@ pub fn import_triangles(
         -((rows - 1) as f64 * step) / 2.0,
     ];
     let depth_map = sample_depth_map(
-        triangles,
+        &normalized,
         |v| [v[1] - center_y, v[0] - center_x],
         columns,
         rows,
@@ -87,7 +96,7 @@ pub fn import_triangles(
     );
     let (min_depth, max_depth) = depth_map.depth_range().ok_or(ImportError::NoFloor)?;
 
-    let display: Vec<Triangle> = triangles
+    let display: Vec<Triangle> = normalized
         .iter()
         .map(|triangle| Triangle {
             vertices: triangle
@@ -126,4 +135,53 @@ pub fn import_triangles(
         display_stl: write_binary_stl(&display),
         depth_map,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn translation_preserves_depth_and_display_coordinates() {
+        let tray = vec![
+            Triangle {
+                vertices: [
+                    [-10.0, -10.0, 10.0],
+                    [-10.0, 10.0, 10.0],
+                    [10.0, 10.0, 10.0],
+                ],
+            },
+            Triangle {
+                vertices: [
+                    [-10.0, -10.0, 10.0],
+                    [10.0, 10.0, 10.0],
+                    [10.0, -10.0, 10.0],
+                ],
+            },
+            Triangle {
+                vertices: [[-10.0, -10.0, 0.0], [10.0, -10.0, 0.0], [10.0, -10.0, 10.0]],
+            },
+        ];
+        let options = ImportOptions {
+            id: "tray".into(),
+            label: "Tray".into(),
+            model_url: String::new(),
+            depth: DepthMapOptions::default(),
+        };
+        let expected = import_triangles(&tray, &options).unwrap();
+        assert_eq!(expected.asset.depth_map.min_depth_mm, 10.0);
+        for offset in [[7.0, -13.0, 20.0], [-5.0, 9.0, -30.0]] {
+            let translated: Vec<Triangle> = tray
+                .iter()
+                .map(|triangle| Triangle {
+                    vertices: triangle
+                        .vertices
+                        .map(|v| std::array::from_fn(|i| v[i] + offset[i])),
+                })
+                .collect();
+            let imported = import_triangles(&translated, &options).unwrap();
+            assert_eq!(imported.asset, expected.asset);
+            assert_eq!(imported.display_stl, expected.display_stl);
+        }
+    }
 }

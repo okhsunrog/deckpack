@@ -93,12 +93,16 @@ function PlacementEditor({
           <kbd>Del</kbd>
         </button>
       </div>
-      <div className={`placement-state ${state?.outside || state?.collides ? "invalid" : "valid"}`}>
-        {state?.outside
-          ? "Выходит за корпус"
-          : state?.collides
-            ? "Обнаружена коллизия"
-            : "Позиция свободна"}
+      <div
+        className={`placement-state ${!state ? "pending" : state.outside || state.collides ? "invalid" : "valid"}`}
+      >
+        {!state
+          ? "Нет результата проверки"
+          : state.outside
+            ? "Выходит за корпус"
+            : state.collides
+              ? "Обнаружена коллизия"
+              : "Позиция свободна"}
       </div>
       <div className="two-column-fields">
         <NumberField
@@ -293,10 +297,16 @@ export function ResultsPanel({
         <div className="panel-scroll components-view">
           <div className="collision-summary">
             <span
-              className={evaluation?.hasCollision ? "collision-dot invalid" : "collision-dot"}
+              className={`collision-dot ${!evaluation ? "pending" : evaluation.hasCollision ? "invalid" : ""}`}
             />
             <div>
-              <b>{evaluation?.hasCollision ? "Есть пересечения" : "Коллизий нет"}</b>
+              <b>
+                {!evaluation
+                  ? "Нет результата проверки"
+                  : evaluation.hasCollision
+                    ? "Есть пересечения"
+                    : "Коллизий нет"}
+              </b>
               <span>Перетаскивайте блоки прямо в 3D или задавайте координаты.</span>
             </div>
           </div>
@@ -323,8 +333,12 @@ export function ResultsPanel({
                       <b>{spec?.model}</b>
                       <small>{placement.position.map((v) => v.toFixed(0)).join(" / ")} мм</small>
                     </span>
-                    <em className={status?.collides || status?.outside ? "bad" : ""}>
-                      {status?.collides || status?.outside ? "!" : "OK"}
+                    <em
+                      className={
+                        !status ? "pending" : status.collides || status.outside ? "bad" : ""
+                      }
+                    >
+                      {!status ? "…" : status.collides || status.outside ? "!" : "OK"}
                     </em>
                   </button>
                 );

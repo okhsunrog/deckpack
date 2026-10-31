@@ -71,7 +71,7 @@ function App() {
   const projectPath = usePlannerStore((state) => state.projectPath);
   const setHolderOptions = usePlannerStore((state) => state.setHolderOptions);
   const cell = getCell(config.pack.cellId);
-  const { plans, exploredCount, loading } = useLayoutEngine(config, cell);
+  const { plans, exploredCount, loading, error: layoutError } = useLayoutEngine(config, cell);
   // Ids change whenever tolerances or the enclosure change, so fall back to
   // the lattice signature before giving up and taking the top-ranked plan.
   const selectedPlan =
@@ -104,7 +104,27 @@ function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [removeComponent, selectedComponentId, setSelectedComponentId]);
 
-  const evaluation = useWorkspaceEvaluation(config.enclosure, selectedPlan, placements);
+  const {
+    evaluation,
+    loading: evaluating,
+    error: evaluationError,
+  } = useWorkspaceEvaluation(config.enclosure, selectedPlan, placements);
+  const geometryInvalid =
+    !!layoutError || !!evaluationError || (!loading && !selectedPlan) || !!evaluation?.hasCollision;
+  const geometryPending = !geometryInvalid && (loading || evaluating || !evaluation);
+  const geometryStatus = loading
+    ? "Перебор геометрии…"
+    : layoutError
+      ? "Ошибка перебора геометрии"
+      : !selectedPlan
+        ? "Нет подходящих раскладок"
+        : evaluationError
+          ? "Ошибка проверки геометрии"
+          : evaluating || !evaluation
+            ? "Проверка геометрии…"
+            : evaluation.hasCollision
+              ? "Проверьте коллизии"
+              : "Геометрия валидна";
 
   const totalCells = config.pack.seriesCount * config.pack.parallelCount;
   const packVoltage = config.pack.seriesCount * cell.nominalVoltageV;
@@ -142,7 +162,7 @@ function App() {
           <span className="header-divider" aria-hidden="true" />
           <button
             type="button"
-            disabled={!selectedPlan || selectedPlan.orientation === "z"}
+            disabled={loading || !selectedPlan || selectedPlan.orientation === "z"}
             title="STL волновых ложементов под выбранную раскладку"
             onClick={() => selectedPlan && void exportHolder(selectedPlan, cell)}
           >
@@ -242,13 +262,12 @@ function App() {
             <div className="scene-help">
               ЛКМ: выбрать / перетащить · ПКМ по объекту: меню · Delete: удалить · колесо: масштаб
             </div>
-            <div className={`scene-status ${evaluation?.hasCollision ? "invalid" : ""}`}>
+            <div
+              className={`scene-status ${geometryInvalid ? "invalid" : geometryPending ? "pending" : ""}`}
+              title={layoutError ?? evaluationError}
+            >
               <span />
-              {loading
-                ? "Перебор геометрии…"
-                : evaluation?.hasCollision
-                  ? "Проверьте коллизии"
-                  : "Геометрия валидна"}
+              {geometryStatus}
             </div>
           </div>
           <MetricsBar

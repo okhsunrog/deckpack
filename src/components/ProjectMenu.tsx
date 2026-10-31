@@ -1,7 +1,7 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useState } from "react";
 import { commands, type ProjectFile, type RecentProject } from "../bindings";
-import { usePlannerStore } from "../store/planner-store";
+import { resolveHolderOptions, usePlannerStore } from "../store/planner-store";
 
 const PROJECT_FILTER = [{ name: "Deckpack project", extensions: ["json"] }];
 
@@ -47,6 +47,9 @@ export function ProjectMenu() {
         schemaVersion: 2,
         config: state.config,
         components: state.placements,
+        selectedPlanKey: state.selectedPlanKey,
+        holderOptions: resolveHolderOptions(state),
+        holderCsg: state.holderCsg,
       };
       const result = await commands.saveProject(path, project);
       if (result.status === "error") {

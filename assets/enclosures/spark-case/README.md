@@ -24,12 +24,20 @@ outside the band and drops the faces that collapse; nothing outside the band mov
 `crates/deckpack-mesh/tests/spark_case_flat.rs` checks the result against the bundled
 height map and against an import of the untouched `full-2mm.stl`.
 
-Run the generator from the repository root:
+Regenerate the bundled assets from the repository root:
 
 ```sh
-uv run --with trimesh --with rtree --with scipy python scripts/generate_spark_enclosure.py
+cargo run -p deckpack-cli --release -- enclosure import \
+  assets/enclosures/spark-case/source/full-2mm-flat.stl \
+  -o spark.json --display public/models/enclosures/spark-case.stl \
+  --id spark-case --label "Spark case (carbon 2 mm)"
 ```
 
-It produces the centered display mesh in `public/models/enclosures/` and the 0.5 mm
-inner-depth map used by the containment kernel. The depth map uses only inward-facing
-triangle intersections so the outer shell is not mistaken for usable volume.
+Set `modelUrl` in `spark.json` to `/models/enclosures/spark-case.stl`, remove `modelPath`,
+and save it as `src/data/enclosures/spark-case-heightmap.json`. The importer normalizes
+the opening to zero depth, produces the centered display mesh, and samples the 0.5 mm
+inner-depth map. The depth map uses only inward-facing triangle intersections so the
+outer shell is not mistaken for usable volume. The source opening is at Z = 0.000025 mm;
+normalizing that offset changes seven quantized rim samples compared with the old import.
+
+`scripts/generate_spark_enclosure.py` is the retired Python pipeline, retained for provenance.

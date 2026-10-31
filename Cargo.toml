@@ -18,17 +18,3 @@ opt-level = 2
 # The holder preview rebuilds CSG solids on every option change.
 [profile.dev.package.manifold-rust]
 opt-level = 2
-
-# Track the unreleased tauri `dev` branch: it depends on tao 0.37 / wry 0.56,
-# which carry the Wayland decoration fixes (tao #1218: no client-side
-# decorations when the compositor offers server-side ones) that the
-# crates.io 2.11.x releases still lack.
-[patch.crates-io]
-tauri = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
-tauri-build = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
-tauri-codegen = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
-tauri-macros = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
-tauri-plugin = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
-tauri-runtime = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
-tauri-runtime-wry = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
-tauri-utils = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }

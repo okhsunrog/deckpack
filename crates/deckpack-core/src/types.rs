@@ -604,6 +604,14 @@ pub struct HolderPieces {
     pub lateral_index: u8,
 }
 
+/// CSG settings shared by project files and the desktop export commands.
+#[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Copy, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HolderCsg {
+    /// End rails with screw holes (8 mm rails, 3.2 mm holes).
+    pub rails: bool,
+}
+
 #[derive(Serialize, Deserialize, Type, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct HolderPieceSummary {

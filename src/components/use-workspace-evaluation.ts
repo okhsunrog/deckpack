@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   commands,
   type ComponentPlacement,
@@ -9,38 +9,50 @@ import {
 
 /**
  * Collision / free-volume evaluation of the placed components, computed by
- * the Rust core over IPC. The previous result stays visible while a newer
- * request is in flight, and stale responses are dropped.
+ * the Rust core over IPC. A result is exposed only for its matching inputs;
+ * pending, failed and absent evaluations must not look like a valid workspace.
  */
 export function useWorkspaceEvaluation(
   enclosure: EnclosureSpec,
   plan: PackPlan | undefined,
   placements: ComponentPlacement[],
-): WorkspaceEvaluation | undefined {
-  const [evaluation, setEvaluation] = useState<WorkspaceEvaluation>();
-  const requestIdRef = useRef(0);
+): { evaluation?: WorkspaceEvaluation; loading: boolean; error?: string } {
+  const [state, setState] = useState<{
+    enclosure?: EnclosureSpec;
+    plan?: PackPlan;
+    placements?: ComponentPlacement[];
+    evaluation?: WorkspaceEvaluation;
+    error?: string;
+    loading: boolean;
+  }>({ loading: !!plan });
 
   useEffect(() => {
-    if (!plan) {
-      setEvaluation(undefined);
-      return;
-    }
-    const requestId = requestIdRef.current + 1;
-    requestIdRef.current = requestId;
+    let active = true;
+    const inputs = { enclosure, plan, placements };
+    setState({ ...inputs, loading: !!plan });
+    if (!plan) return;
     commands
       .evaluateWorkspace(enclosure, plan, placements)
       .then((result) => {
-        if (requestIdRef.current !== requestId) return;
+        if (!active) return;
         if (result.status === "ok") {
-          setEvaluation(result.data);
+          setState({ ...inputs, loading: false, evaluation: result.data });
         } else {
           console.error("Workspace evaluation failed", result.error);
+          setState({ ...inputs, loading: false, error: result.error });
         }
       })
       .catch((error: unknown) => {
-        if (requestIdRef.current === requestId) console.error("Workspace evaluation failed", error);
+        if (!active) return;
+        console.error("Workspace evaluation failed", error);
+        setState({ ...inputs, loading: false, error: String(error) });
       });
+    return () => {
+      active = false;
+    };
   }, [enclosure, plan, placements]);
 
-  return evaluation;
+  return state.enclosure === enclosure && state.plan === plan && state.placements === placements
+    ? state
+    : { loading: !!plan };
 }

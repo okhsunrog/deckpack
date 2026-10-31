@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { commands, type CellSpec, type PackPlan, type PlannerConfig } from "../bindings";
 
 interface LayoutEngineState {
   plans: PackPlan[];
   exploredCount: number;
   loading: boolean;
+  error?: string;
 }
 
 const initialState: LayoutEngineState = { plans: [], exploredCount: 0, loading: true };
@@ -15,30 +16,47 @@ const initialState: LayoutEngineState = { plans: [], exploredCount: 0, loading: 
  * failure never leaves the UI in an endless loading state.
  */
 export function useLayoutEngine(config: PlannerConfig, cell: CellSpec): LayoutEngineState {
-  const requestIdRef = useRef(0);
-  const [state, setState] = useState(initialState);
+  const [state, setState] = useState<
+    LayoutEngineState & { config?: PlannerConfig; cell?: CellSpec }
+  >(initialState);
 
   useEffect(() => {
-    const requestId = requestIdRef.current + 1;
-    requestIdRef.current = requestId;
-    setState((current) => ({ ...current, loading: true }));
+    let active = true;
+    setState({ ...initialState, config, cell });
     commands
       .enumeratePlans({ config, cell })
       .then((result) => {
-        if (requestIdRef.current !== requestId) return;
+        if (!active) return;
         if (result.status === "ok") {
-          setState({ ...result.data, loading: false });
+          setState({ ...result.data, loading: false, config, cell });
         } else {
           console.error("Layout enumeration failed", result.error);
-          setState((current) => ({ ...current, loading: false }));
+          setState({
+            plans: [],
+            exploredCount: 0,
+            loading: false,
+            error: result.error,
+            config,
+            cell,
+          });
         }
       })
       .catch((error: unknown) => {
-        if (requestIdRef.current !== requestId) return;
+        if (!active) return;
         console.error("Layout enumeration failed", error);
-        setState((current) => ({ ...current, loading: false }));
+        setState({
+          plans: [],
+          exploredCount: 0,
+          loading: false,
+          error: String(error),
+          config,
+          cell,
+        });
       });
+    return () => {
+      active = false;
+    };
   }, [config, cell]);
 
-  return state;
+  return state.config === config && state.cell === cell ? state : initialState;
 }
