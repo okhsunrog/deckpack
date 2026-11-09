@@ -1,5 +1,7 @@
 mod commands;
 mod enclosures;
+#[cfg(target_os = "linux")]
+mod linux;
 mod projects;
 
 use specta_typescript::semantic;
@@ -54,6 +56,9 @@ fn export_bindings(builder: &Builder<tauri::Wry>) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    linux::init_gtk();
+
     let specta = specta_builder();
     // Keep the bindings in sync with the Rust commands during development.
     #[cfg(debug_assertions)]

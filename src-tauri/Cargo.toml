@@ -29,3 +29,7 @@ specta = { version = "=2.0.0-rc.26", features = ["derive"] }
 tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
 specta-typescript = "=0.0.13"
 deckpack-mesh = { version = "0.1.0", path = "../crates/deckpack-mesh" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Match the gtk-rs generation used by Tauri/Wry.
+gtk = "0.18"
