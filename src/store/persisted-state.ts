@@ -76,16 +76,14 @@ const placementSchema = z
     rotationQuarterTurns: z.number().int().optional(),
     dimensionsMm: dimensionsSchema,
   })
-  .transform(
-    (placement): ComponentPlacement => ({
-      id: placement.id,
-      componentId: placement.componentId,
-      position: placement.position,
-      rotationDeg: placement.rotationDeg ?? (placement.rotationQuarterTurns ?? 0) * 90,
-      tiltDeg: placement.tiltDeg ?? 0,
-      dimensionsMm: placement.dimensionsMm,
-    }),
-  );
+  .transform((placement): ComponentPlacement => ({
+    id: placement.id,
+    componentId: placement.componentId,
+    position: placement.position,
+    rotationDeg: placement.rotationDeg ?? (placement.rotationQuarterTurns ?? 0) * 90,
+    tiltDeg: placement.tiltDeg ?? 0,
+    dimensionsMm: placement.dimensionsMm,
+  }));
 
 /**
  * localStorage is untrusted input: an older schema, a partial write, or a

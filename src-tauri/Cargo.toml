@@ -12,7 +12,7 @@ name = "deckpack_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.6.3", features = [] }
+tauri-build = { version = "2.7.4", features = [] }
 
 [dependencies]
 serde_json = "1.0"
@@ -20,11 +20,12 @@ serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 tauri = { version = "~2.12", features = ["protocol-asset"] }
 tauri-plugin-log = "2"
-tauri-plugin-dialog = "2.7.3"
-tauri-plugin-opener = "2.5.5"
-tauri-plugin-mcp-bridge = "0.13.0" # debug builds only, see lib.rs
+tauri-plugin-dialog = "2.8.4"
+tauri-plugin-opener = "2.7.2"
+tauri-plugin-mcp-bridge = "0.13.2" # debug builds only, see lib.rs
 deckpack-core = { version = "0.1.0", path = "../crates/deckpack-core" }
-specta = { version = "2.0.0-rc.25", features = ["derive"] }
-tauri-specta = { version = "2.0.0-rc.25", features = ["derive", "typescript"] }
-specta-typescript = "0.0.12"
+# These exporter versions must match tauri-specta's exact Specta dependency.
+specta = { version = "=2.0.0-rc.26", features = ["derive"] }
+tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
+specta-typescript = "=0.0.13"
 deckpack-mesh = { version = "0.1.0", path = "../crates/deckpack-mesh" }

@@ -10,29 +10,29 @@ export const commands = {
 	 *  What a new project starts from; the single source of the default
 	 *  tolerance stack and service reservations.
 	 */
-	defaultConfig: () => __TAURI_INVOKE<PlannerConfig>("default_config").then((v) => (({...v,pack:({...v.pack,toleranceStack:v.pack.toleranceStack.map(i=>i),serviceReservations:v.pack.serviceReservations.map(i=>({...i,sizeMm:i.sizeMm.map(i=>i),offsetMm:i.offsetMm==null?i.offsetMm:i.offsetMm.map(i=>i)}))})}) as typeof v)),
-	cellLibrary: () => __TAURI_INVOKE<CellSpec[]>("cell_library").then((v) => (v.map(i=>({...i,bareDiameterMm:i.bareDiameterMm==null?i.bareDiameterMm:i.bareDiameterMm,bareHeightMm:i.bareHeightMm==null?i.bareHeightMm:i.bareHeightMm})) as typeof v)),
-	componentLibrary: () => __TAURI_INVOKE<ComponentSpec[]>("component_library").then((v) => (v.map(i=>({...i,massG:i.massG==null?i.massG:i.massG,visual:i.visual==null?i.visual:i.visual})) as typeof v)),
-	enclosureAssets: () => __TAURI_INVOKE<HeightMapAsset[]>("enclosure_assets").then((v) => (v.map(i=>({...i,depthMap:({...i.depthMap,originMm:i.depthMap.originMm.map(i=>i)})})) as typeof v)),
+	defaultConfig: () => __TAURI_INVOKE<PlannerConfig>("default_config"),
+	cellLibrary: () => __TAURI_INVOKE<CellSpec[]>("cell_library"),
+	componentLibrary: () => __TAURI_INVOKE<ComponentSpec[]>("component_library"),
+	enclosureAssets: () => __TAURI_INVOKE<HeightMapAsset[]>("enclosure_assets"),
 	/**
 	 *  Collision and free-volume check of the placed components against the pack
 	 *  and the enclosure. Runs on every drag frame, so it stays synchronous: the
 	 *  work is a few hundred microseconds.
 	 */
-	evaluateWorkspace: (enclosure: EnclosureSpec, plan: PackPlan, placements: ComponentPlacement[]) => typedError<WorkspaceEvaluation, string>(__TAURI_INVOKE("evaluate_workspace", { enclosure, plan: ({...plan,cellSizeMm:plan.cellSizeMm.map(i=>i),cells:plan.cells.map(i=>({...i,position:i.position.map(i=>i)})),groups:plan.groups.map(i=>({...i,center:i.center.map(i=>i)})),seriesPath:plan.seriesPath.map(i=>i.map(i=>i)),blocks:plan.blocks.map(i=>({...i,envelope:({...i.envelope,min:i.envelope.min.map(i=>i),max:i.envelope.max.map(i=>i)})})),serviceVolumes:plan.serviceVolumes.map(i=>({...i,box:({...i.box,min:i.box.min.map(i=>i),max:i.box.max.map(i=>i)})})),bounds:({...plan.bounds,min:plan.bounds.min.map(i=>i),max:plan.bounds.max.map(i=>i)}),metrics:({...plan.metrics,largestFreeBox:({...plan.metrics.largestFreeBox,box:({...plan.metrics.largestFreeBox.box,min:plan.metrics.largestFreeBox.box.min.map(i=>i),max:plan.metrics.largestFreeBox.box.max.map(i=>i)})})})}), placements: placements.map(i=>({...i,position:i.position.map(i=>i)})) })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,components:v.data.components.map(i=>({...i,box:({...i.box,min:i.box.min.map(i=>i),max:i.box.max.map(i=>i)})})),largestFreeBox:({...v.data.largestFreeBox,box:({...v.data.largestFreeBox.box,min:v.data.largestFreeBox.box.min.map(i=>i),max:v.data.largestFreeBox.box.max.map(i=>i)})})}) } : v) as typeof v)),
+	evaluateWorkspace: (enclosure: EnclosureSpec, plan: PackPlan, placements: ComponentPlacement[]) => typedError<WorkspaceEvaluation, string>(__TAURI_INVOKE("evaluate_workspace", { enclosure, plan, placements })),
 	/**
 	 *  Enumerate every feasible pack layout for the request. The search runs on a
 	 *  blocking thread (rayon inside) so the IPC thread stays free; the frontend
 	 *  drops stale responses by request id.
 	 */
-	enumeratePlans: (request: EnumerationRequest) => typedError<EnumerationResponse, string>(__TAURI_INVOKE("enumerate_plans", { request: ({...request,config:({...request.config,pack:({...request.config.pack,toleranceStack:request.config.pack.toleranceStack.map(i=>i),serviceReservations:request.config.pack.serviceReservations.map(i=>({...i,sizeMm:i.sizeMm.map(i=>i),offsetMm:i.offsetMm==null?i.offsetMm:i.offsetMm.map(i=>i)}))})}),cell:({...request.cell,bareDiameterMm:request.cell.bareDiameterMm==null?request.cell.bareDiameterMm:request.cell.bareDiameterMm,bareHeightMm:request.cell.bareHeightMm==null?request.cell.bareHeightMm:request.cell.bareHeightMm})}) })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,plans:v.data.plans.map(i=>({...i,cellSizeMm:i.cellSizeMm.map(i=>i),cells:i.cells.map(i=>({...i,position:i.position.map(i=>i)})),groups:i.groups.map(i=>({...i,center:i.center.map(i=>i)})),seriesPath:i.seriesPath.map(i=>i.map(i=>i)),blocks:i.blocks.map(i=>({...i,envelope:({...i.envelope,min:i.envelope.min.map(i=>i),max:i.envelope.max.map(i=>i)})})),serviceVolumes:i.serviceVolumes.map(i=>({...i,box:({...i.box,min:i.box.min.map(i=>i),max:i.box.max.map(i=>i)})})),bounds:({...i.bounds,min:i.bounds.min.map(i=>i),max:i.bounds.max.map(i=>i)}),metrics:({...i.metrics,largestFreeBox:({...i.metrics.largestFreeBox,box:({...i.metrics.largestFreeBox.box,min:i.metrics.largestFreeBox.box.min.map(i=>i),max:i.metrics.largestFreeBox.box.max.map(i=>i)})})})}))}) } : v) as typeof v)),
+	enumeratePlans: (request: EnumerationRequest) => typedError<EnumerationResponse, string>(__TAURI_INVOKE("enumerate_plans", { request })),
 	/**
 	 *  Generate the holder pieces with CSG, lay them out for the print bed and
 	 *  write one binary STL to `path` (chosen through the native save dialog).
 	 */
-	exportHolderStl: (plan: PackPlan, cell: CellSpec, toleranceStack: ToleranceLayer[], enclosure: EnclosureSpec, options: HolderOptions, csg: HolderCsg, path: string) => typedError<HolderExport, string>(__TAURI_INVOKE("export_holder_stl", { plan: ({...plan,cellSizeMm:plan.cellSizeMm.map(i=>i),cells:plan.cells.map(i=>({...i,position:i.position.map(i=>i)})),groups:plan.groups.map(i=>({...i,center:i.center.map(i=>i)})),seriesPath:plan.seriesPath.map(i=>i.map(i=>i)),blocks:plan.blocks.map(i=>({...i,envelope:({...i.envelope,min:i.envelope.min.map(i=>i),max:i.envelope.max.map(i=>i)})})),serviceVolumes:plan.serviceVolumes.map(i=>({...i,box:({...i.box,min:i.box.min.map(i=>i),max:i.box.max.map(i=>i)})})),bounds:({...plan.bounds,min:plan.bounds.min.map(i=>i),max:plan.bounds.max.map(i=>i)}),metrics:({...plan.metrics,largestFreeBox:({...plan.metrics.largestFreeBox,box:({...plan.metrics.largestFreeBox.box,min:plan.metrics.largestFreeBox.box.min.map(i=>i),max:plan.metrics.largestFreeBox.box.max.map(i=>i)})})})}), cell: ({...cell,bareDiameterMm:cell.bareDiameterMm==null?cell.bareDiameterMm:cell.bareDiameterMm,bareHeightMm:cell.bareHeightMm==null?cell.bareHeightMm:cell.bareHeightMm}), toleranceStack: toleranceStack.map(i=>i), enclosure, options, csg, path })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,pieces:v.data.pieces.map(i=>({...i,sizeMm:i.sizeMm.map(i=>i)}))}) } : v) as typeof v)),
+	exportHolderStl: (plan: PackPlan, cell: CellSpec, toleranceStack: ToleranceLayer[], enclosure: EnclosureSpec, options: HolderOptions, csg: HolderCsg, path: string) => typedError<HolderExport, string>(__TAURI_INVOKE("export_holder_stl", { plan, cell, toleranceStack, enclosure, options, csg, path })),
 	/**  Import an STL enclosure and make it available to the planner. */
-	importEnclosure: (path: string) => typedError<HeightMapAsset, string>(__TAURI_INVOKE("import_enclosure", { path })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,depthMap:({...v.data.depthMap,originMm:v.data.depthMap.originMm.map(i=>i)})}) } : v) as typeof v)),
+	importEnclosure: (path: string) => typedError<HeightMapAsset, string>(__TAURI_INVOKE("import_enclosure", { path })),
 	/**
 	 *  Delete an imported enclosure (its files and its registration). Bundled
 	 *  assets cannot be removed.
@@ -42,14 +42,11 @@ export const commands = {
 	 *  Where a new component of this size fits: deck ends first, then the centre
 	 *  line, trying a quarter turn if the flat orientation finds no room.
 	 */
-	suggestPlacement: (enclosure: EnclosureSpec, plan: PackPlan, existing: ComponentPlacement[], dimensions: Dimensions3D) => typedError<{
-	position: [number, number],
-	rotationDeg: number,
-} | null, string>(__TAURI_INVOKE("suggest_placement", { enclosure, plan: ({...plan,cellSizeMm:plan.cellSizeMm.map(i=>i),cells:plan.cells.map(i=>({...i,position:i.position.map(i=>i)})),groups:plan.groups.map(i=>({...i,center:i.center.map(i=>i)})),seriesPath:plan.seriesPath.map(i=>i.map(i=>i)),blocks:plan.blocks.map(i=>({...i,envelope:({...i.envelope,min:i.envelope.min.map(i=>i),max:i.envelope.max.map(i=>i)})})),serviceVolumes:plan.serviceVolumes.map(i=>({...i,box:({...i.box,min:i.box.min.map(i=>i),max:i.box.max.map(i=>i)})})),bounds:({...plan.bounds,min:plan.bounds.min.map(i=>i),max:plan.bounds.max.map(i=>i)}),metrics:({...plan.metrics,largestFreeBox:({...plan.metrics.largestFreeBox,box:({...plan.metrics.largestFreeBox.box,min:plan.metrics.largestFreeBox.box.min.map(i=>i),max:plan.metrics.largestFreeBox.box.max.map(i=>i)})})})}), existing: existing.map(i=>({...i,position:i.position.map(i=>i)})), dimensions })).then((v) => ((v.status === "ok" ? { ...v, data: v.data==null?v.data:({...v.data,position:v.data.position.map(i=>i)}) } : v) as typeof v)),
+	suggestPlacement: (enclosure: EnclosureSpec, plan: PackPlan, existing: ComponentPlacement[], dimensions: Dimensions3D) => typedError<PlacementSuggestion | null, string>(__TAURI_INVOKE("suggest_placement", { enclosure, plan, existing, dimensions })),
 	/**  Read and validate a project file, recording it as recently used. */
-	loadProject: (path: string) => typedError<ProjectFile, string>(__TAURI_INVOKE("load_project", { path })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,config:({...v.data.config,pack:({...v.data.config.pack,toleranceStack:v.data.config.pack.toleranceStack.map(i=>i),serviceReservations:v.data.config.pack.serviceReservations.map(i=>({...i,sizeMm:i.sizeMm.map(i=>i),offsetMm:i.offsetMm==null?i.offsetMm:i.offsetMm.map(i=>i)}))})}),components:v.data.components.map(i=>({...i,position:i.position.map(i=>i)})),holderOptions:v.data.holderOptions==null?v.data.holderOptions:v.data.holderOptions}) } : v) as typeof v)),
+	loadProject: (path: string) => typedError<ProjectFile, string>(__TAURI_INVOKE("load_project", { path })),
 	/**  Write a project file (pretty JSON) and record it as recently used. */
-	saveProject: (path: string, project: ProjectFile) => typedError<null, string>(__TAURI_INVOKE("save_project", { path, project: ({...project,config:({...project.config,pack:({...project.config.pack,toleranceStack:project.config.pack.toleranceStack.map(i=>i),serviceReservations:project.config.pack.serviceReservations.map(i=>({...i,sizeMm:i.sizeMm.map(i=>i),offsetMm:i.offsetMm==null?i.offsetMm:i.offsetMm.map(i=>i)}))})}),components:project.components.map(i=>({...i,position:i.position.map(i=>i)})),holderOptions:project.holderOptions==null?project.holderOptions:project.holderOptions}) })),
+	saveProject: (path: string, project: ProjectFile) => typedError<null, string>(__TAURI_INVOKE("save_project", { path, project })),
 	/**  Recently opened projects that still exist on disk, newest first. */
 	recentProjects: () => __TAURI_INVOKE<RecentProject[]>("recent_projects"),
 	forgetProject: (path: string) => typedError<null, string>(__TAURI_INVOKE("forget_project", { path })),

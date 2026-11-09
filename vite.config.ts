@@ -1,4 +1,5 @@
 import { defineConfig, lazyPlugins } from "vite-plus";
+import { configDefaults } from "vite-plus/test/config";
 import react from "@vitejs/plugin-react";
 
 // https://vite.dev/config/
@@ -7,6 +8,10 @@ import react from "@vitejs/plugin-react";
 const tauriDevHost = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
+  test: {
+    // nix-direnv links its inputs here, including a copy of this project.
+    exclude: [...configDefaults.exclude, "**/.direnv/**"],
+  },
   // Keep Rust compiler output visible when running under `tauri dev`.
   clearScreen: false,
   // Expose TAURI_ENV_* (platform, arch, debug) to the frontend alongside VITE_*.
@@ -20,8 +25,8 @@ export default defineConfig({
     host: tauriDevHost || false,
     hmr: tauriDevHost ? { protocol: "ws", host: tauriDevHost, port: 5174 } : undefined,
     watch: {
-      // Cargo build artifacts must not trigger frontend reloads.
-      ignored: ["**/src-tauri/**"],
+      // Native sources, build artifacts and Nix inputs do not affect the frontend.
+      ignored: ["**/src-tauri/**", "**/target/**", "**/.direnv/**"],
     },
   },
   staged: {

@@ -6,7 +6,27 @@ The app runs in a [Tauri 2.12](https://tauri.app) desktop shell; its React front
 
 ## Development
 
-Development needs a Rust toolchain and the [Tauri system prerequisites](https://tauri.app/start/prerequisites/):
+On Linux, the pinned Nix development shell provides Rust 1.99.1, Cargo,
+Clippy, rustfmt, rust-analyzer, Node.js, Bun, and the native GTK/WebKit
+dependencies required by Tauri. Rust comes from the official binary releases
+through `rust-overlay`; `rust-toolchain.toml` selects the version and components,
+and `flake.lock` pins the Nix inputs.
+
+Install [Vite+](https://viteplus.dev/guide/) globally once, then enter the shell:
+
+```bash
+nix develop
+```
+
+With direnv and its shell hook installed, run `direnv allow` once in this
+checkout. The checked-in `.envrc` then activates the shell automatically when
+entering the directory and reloads it when the toolchain or flake changes.
+Update the pinned Nix packages with `nix flake update`.
+
+Without Nix, install the toolchain from `rust-toolchain.toml`, Node.js, Bun,
+Vite+, and the [Tauri system prerequisites](https://tauri.app/start/prerequisites/).
+
+Inside the development environment:
 
 ```bash
 vp install
@@ -19,8 +39,11 @@ Validation:
 ```bash
 vp check
 vp test
-vp build
-cargo fmt --check && cargo clippy --workspace && cargo test --workspace
+vp run build
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --release --locked
+vp run tauri build --no-bundle
 ```
 
 ### Command line

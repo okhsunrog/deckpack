@@ -27,6 +27,15 @@ dist-ssr
 .env
 .env.*
 !.env.example
+!/.envrc
 
 # Cargo workspace build output
 /target
+
+# Local direnv environment and Nix build symlinks
+/.direnv/
+/result
+/result-*
+
+# Vitest cache
+.vitest/

@@ -14,7 +14,7 @@ use deckpack_core::project::{default_config, mesh_enclosure};
 use deckpack_core::*;
 use deckpack_mesh::{DepthMapOptions, ImportOptions, import_enclosure_stl};
 use rmcp::handler::server::wrapper::{Json, Parameters};
-use rmcp::model::{Implementation, ServerCapabilities, ServerInfo};
+use rmcp::model::{Implementation, ServerCapabilities, ServerConfig};
 use rmcp::{
     ErrorData, ServerHandler, ServiceExt, tool, tool_handler, tool_router, transport::stdio,
 };
@@ -432,8 +432,8 @@ impl DeckpackServer {
 
 #[tool_handler]
 impl ServerHandler for DeckpackServer {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+    fn get_info(&self) -> ServerConfig {
+        ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("deckpack", env!("CARGO_PKG_VERSION")))
             .with_instructions(INSTRUCTIONS)
     }
